@@ -1,0 +1,1443 @@
+================================================================================
+        AI CUSTOMER SUPPORT SAAS PLATFORM — INTERVIEW PREPARATION GUIDE
+================================================================================
+
+Project Name    : SupportAI (AI Customer Support SaaS Platform)
+Type            : Production-grade Multi-Tenant SaaS
+Tagline         : "Create an AI-powered customer support chatbot trained on
+                   your company's documents, website, FAQs, and knowledge base."
+Monorepo Root   : AI Customer Support Platform/
+
+
+================================================================================
+SECTION 1: PROJECT OVERVIEW (ELEVATOR PITCH)
+================================================================================
+
+WHAT IS THIS PROJECT?
+---------------------
+A full-stack SaaS platform that lets companies:
+  - Sign up and create a workspace (multi-tenant)
+  - Upload documents and crawl websites to build a knowledge base
+  - Train an AI chatbot using RAG (Retrieval-Augmented Generation)
+  - Embed the chatbot on any website via a JavaScript widget
+  - Handle customer conversations with AI + human escalation
+  - Auto-generate support tickets when AI confidence is low
+  - View analytics (CSAT, ticket volume, top questions, accuracy trends)
+
+WHO IS IT FOR?
+--------------
+B2B SaaS — companies that repeatedly answer the same customer questions
+(pricing, refunds, product info, installation, troubleshooting).
+
+WHAT PROBLEM DOES IT SOLVE?
+---------------------------
+Companies waste time answering repetitive support questions. This platform
+automates 70%+ of support using RAG — the AI retrieves real company data
+before generating answers, reducing hallucinations and improving accuracy.
+
+
+================================================================================
+SECTION 2: TECH STACK (WITH VERSIONS)
+================================================================================
+
+FRONTEND
+--------
+  Next.js              15.x        (App Router, React Server Components)
+  React                19.x
+  TypeScript           5.7
+  Tailwind CSS         3.4         (utility-first styling)
+  Shadcn UI + Radix    -           (accessible UI primitives)
+  TanStack React Query 5.x         (server state / API caching)
+  Zustand              5.x         (client auth state)
+  Axios                1.7         (HTTP client with token refresh)
+  Recharts             2.x         (analytics charts)
+  Framer Motion        11.x        (animations)
+  Lucide React         -           (icons)
+  Sonner               -           (toast notifications)
+  next-themes          -           (dark/light mode)
+  Jest + Playwright    -           (unit + E2E tests)
+
+BACKEND
+-------
+  Python               3.12
+  FastAPI              0.115       (async REST API framework)
+  Uvicorn              0.34        (ASGI server)
+  Pydantic             2.10        (data validation / schemas)
+  Motor                3.6         (async MongoDB driver)
+  python-jose          3.3         (JWT tokens)
+  passlib + bcrypt     -           (password hashing)
+  Authlib              1.4         (Google OAuth)
+  Celery               5.4         (background job queue)
+  Redis                5.2         (cache + Celery broker)
+  SlowAPI              -           (rate limiting)
+  LangChain            0.3         (text splitting / RAG utilities)
+  OpenAI SDK           1.58        (GPT-4o + embeddings)
+  Anthropic SDK        0.42        (Claude fallback)
+  Pinecone Client      5.0         (vector database)
+  boto3                1.35        (AWS S3 storage)
+  BeautifulSoup        4.12        (website crawler)
+  PyPDF / PDFPlumber   -           (PDF text extraction)
+  python-docx          -           (Word document extraction)
+  Stripe SDK           11.4        (billing — stubbed)
+  pytest               8.3         (backend tests)
+
+DATABASE & STORAGE
+------------------
+  MongoDB              7           (primary transactional database)
+  Pinecone             -           (vector embeddings, cosine similarity)
+  Redis                7           (query cache + Celery message broker)
+  AWS S3 / Local       -           (document file storage)
+
+INFRASTRUCTURE
+--------------
+  Docker + Docker Compose
+  Nginx                (reverse proxy)
+  Prometheus + Grafana (monitoring)
+  GitHub Actions       (CI/CD pipeline)
+
+WIDGET
+------
+  Vite                 6.x         (standalone embeddable JS bundle)
+  TypeScript           5.7
+
+
+================================================================================
+SECTION 3: PROJECT STRUCTURE
+================================================================================
+
+AI Customer Support Platform/
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # FastAPI entry point
+│   │   ├── api/v1/
+│   │   │   ├── router.py           # Aggregates all API routers
+│   │   │   └── endpoints/          # 16 HTTP route modules
+│   │   ├── core/
+│   │   │   ├── config.py           # Environment settings (Pydantic)
+│   │   │   ├── database.py         # MongoDB connection + indexes
+│   │   │   ├── security.py         # JWT, password hashing
+│   │   │   ├── deps.py             # FastAPI dependency injection
+│   │   │   └── tenant.py           # TenantContext dataclass
+│   │   ├── middleware/
+│   │   │   ├── audit.py            # Audit log middleware
+│   │   │   └── rate_limit.py       # SlowAPI limiter
+│   │   ├── models/enums.py         # Roles, permissions, statuses
+│   │   ├── repositories/           # MongoDB data access layer
+│   │   ├── schemas/                # Pydantic request/response DTOs
+│   │   ├── services/                 # Business logic layer
+│   │   ├── ai/
+│   │   │   ├── rag_engine.py       # Core RAG pipeline
+│   │   │   ├── embeddings.py       # OpenAI embeddings
+│   │   │   ├── vector_store.py     # Pinecone client
+│   │   │   ├── llm_client.py       # OpenAI/Claude abstraction
+│   │   │   └── prompts/support.py  # Prompt templates
+│   │   ├── workers/                # Celery async tasks
+│   │   └── utils/                  # Storage, email, chunking, crawler
+│   └── tests/                      # pytest unit + integration tests
+├── frontend/
+│   └── src/
+│       ├── app/                    # Next.js pages (App Router)
+│       ├── components/             # UI + layout components
+│       ├── lib/api.ts              # Axios API client
+│       ├── stores/auth-store.ts    # Zustand auth state
+│       └── providers/              # React Query + theme
+├── widget/
+│   └── src/widget.ts               # Embeddable chat widget (IIFE)
+├── infrastructure/
+│   ├── docker-compose.yml
+│   ├── nginx/nginx.conf
+│   └── monitoring/prometheus.yml
+└── docs/                           # Architecture, API, schema docs
+
+
+================================================================================
+SECTION 4: SYSTEM ARCHITECTURE
+================================================================================
+
+HIGH-LEVEL FLOW
+---------------
+
+  [Browser / Widget / Public API]
+              |
+              v
+         [Nginx :80]  (reverse proxy)
+              |
+     +--------+--------+
+     |                 |
+     v                 v
+ [Next.js :3000]  [FastAPI :8000]
+  Dashboard UI      REST API + WebSocket
+                         |
+          +--------------+--------------+
+          |              |              |
+          v              v              v
+      [MongoDB]     [Pinecone]      [Redis]
+      (documents,   (embeddings)    (cache +
+       users,                        Celery)
+       tickets,
+       conversations)
+                         |
+                         v
+                    [AWS S3 / Local]
+                    (uploaded files)
+
+
+BACKEND LAYERED ARCHITECTURE (Clean Architecture)
+-------------------------------------------------
+
+  Layer 1: ENDPOINTS (HTTP)
+    - Thin controllers — validate input, call service, return response
+    - Files: backend/app/api/v1/endpoints/*.py
+
+  Layer 2: SERVICES (Business Logic)
+    - Orchestrate repositories, AI engines, external APIs
+    - Files: backend/app/services/*.py
+
+  Layer 3: REPOSITORIES (Data Access)
+    - MongoDB CRUD with tenant-scoped queries
+    - Files: backend/app/repositories/*.py
+
+  Layer 4: SCHEMAS (Contracts)
+    - Pydantic models for request/response validation
+    - Files: backend/app/schemas/*.py
+
+  Layer 5: AI LAYER (Intelligence)
+    - RAG, embeddings, LLM, vector store
+    - Files: backend/app/ai/*.py
+
+  Layer 6: WORKERS (Async Jobs)
+    - Celery tasks for long-running operations
+    - Files: backend/app/workers/*.py
+
+
+REQUEST FLOW EXAMPLE (Send Chat Message)
+-----------------------------------------
+
+  1. Widget POST /api/v1/public/chat/{chatbot_id}/message
+  2. Rate limiter checks IP (30 requests/minute)
+  3. ChatbotRepository.get_public() — validate chatbot exists
+  4. ChatService.send_message()
+       a. Create/find conversation in MongoDB
+       b. Save user message
+       c. RAGEngine.query() — embed, search, rerank, LLM generate
+       d. Save assistant message with confidence + sources
+       e. If confidence < 0.6 → TicketService.auto_create_from_conversation()
+  5. Return JSON: { content, confidence, sources, conversation_id }
+
+
+================================================================================
+SECTION 5: CORE CONCEPTS & TECHNIQUES USED
+================================================================================
+
+1. RETRIEVAL-AUGMENTED GENERATION (RAG)
+--------------------------------------
+   Instead of relying only on the LLM's training data, RAG:
+     a. Retrieves relevant document chunks from your knowledge base
+     b. Injects them as context into the LLM prompt
+     c. Generates an answer grounded in your actual company data
+
+   Why RAG over fine-tuning?
+     - No retraining needed when docs change
+     - Source citations possible
+     - Lower cost
+     - Works with proprietary/private data immediately
+
+2. HYBRID SEARCH
+----------------
+   Combines two retrieval methods:
+     - Vector search (semantic similarity via Pinecone embeddings)
+     - Keyword search (MongoDB regex on chunk content)
+   Better recall than either method alone.
+
+3. QUERY REWRITING
+------------------
+   Follow-up questions like "What about refunds?" are rewritten by the LLM
+   into standalone queries using conversation history, improving retrieval
+   accuracy for multi-turn conversations.
+
+4. CONFIDENCE SCORING
+---------------------
+   Two signals combined:
+     - Average embedding similarity score from retrieved chunks
+     - LLM self-assessment (asks model to rate 0.0–1.0)
+   If confidence < 0.6 → auto-escalate to human agent + create ticket.
+
+5. MULTI-TENANCY
+-----------------
+   Each company (workspace) has completely isolated data:
+     - MongoDB: every document has workspace_id field
+     - Pinecone: separate namespace per workspace (workspace_{id})
+     - JWT: workspace_id claim in access token
+     - Header: X-Workspace-Id on every authenticated request
+
+6. CHUNKING STRATEGY
+--------------------
+   Documents split into overlapping chunks for better retrieval:
+     - Chunk size: 800 characters (~500-1000 tokens)
+     - Overlap: 150 characters (preserves context across boundaries)
+     - Tool: LangChain RecursiveCharacterTextSplitter
+     - Separators: paragraph → line → sentence → word
+
+7. EMBEDDINGS
+-------------
+   Text converted to 1536-dimensional vectors for semantic search:
+     - Model: OpenAI text-embedding-3-small
+     - Stored in: Pinecone (production) or in-memory dict (dev fallback)
+     - Similar vectors = semantically similar content
+
+8. VECTOR DATABASE (Pinecone)
+------------------------------
+   Specialized DB for storing and searching high-dimensional vectors:
+     - Index: support-kb
+     - Metric: cosine similarity
+     - Namespace per tenant for isolation
+     - Top-K retrieval (K=20, reranked to top 5)
+
+9. BACKGROUND JOB PROCESSING (Celery)
+--------------------------------------
+   Long-running tasks run asynchronously so API responds fast:
+     - Document ingestion (extract → chunk → embed → store)
+     - Website crawling
+     - Nightly analytics aggregation
+     - Conversation summarization
+
+10. ROLE-BASED ACCESS CONTROL (RBAC)
+------------------------------------
+    4 roles with granular permissions:
+      owner   → all permissions
+      admin   → all except billing
+      agent   → tickets, live chat, analytics view
+      viewer  → analytics view only
+
+11. JWT AUTHENTICATION
+----------------------
+    Stateless auth using JSON Web Tokens:
+      Access token  → 30 minutes (used on every API call)
+      Refresh token → 7 days (used to get new access token)
+    Claims: user_id (sub), workspace_id, role, token type
+
+12. DEPENDENCY INJECTION (FastAPI Depends)
+-------------------------------------------
+    Services and repositories injected via FastAPI's Depends():
+      def get_service(tenant: Tenant) -> KnowledgeService:
+          return KnowledgeService(get_database(), tenant.workspace_id)
+
+13. REPOSITORY PATTERN
+-----------------------
+    All database access goes through repository classes.
+    BaseRepository provides: create, get_by_id, update, delete, list
+    with automatic workspace_id filtering and timestamp management.
+
+14. STRATEGY PATTERN (AI Fallbacks)
+------------------------------------
+    LLMClient:     OpenAI → Claude → Demo message
+    VectorStore:   Pinecone → In-memory dict
+    Embeddings:    OpenAI → Hash-based deterministic vectors
+
+15. AUDIT LOGGING
+-----------------
+    Middleware logs all POST/PUT/PATCH/DELETE operations to audit_logs
+    collection with: user_id, workspace_id, action, duration, status code.
+
+16. RATE LIMITING
+-----------------
+    SlowAPI limits public widget chat endpoint to 30 requests/minute per IP
+    to prevent abuse of the unauthenticated public API.
+
+17. GRACEFUL DEGRADATION
+-------------------------
+    Platform works without OpenAI/Pinecone API keys:
+      - Hash-based embeddings (dev mode)
+      - In-memory vector store
+      - Demo LLM responses
+    Allows development and demos without paid API keys.
+
+
+================================================================================
+SECTION 6: ALL 21 MODULES — DETAILED BREAKDOWN
+================================================================================
+
+MODULE 1: AUTHENTICATION [FULLY IMPLEMENTED]
+---------------------------------------------
+Files: services/auth_service.py, endpoints/auth.py, core/security.py
+Features:
+  - Email/password signup (creates user + workspace + owner membership)
+  - Login with JWT access + refresh tokens
+  - Token refresh endpoint
+  - Email verification (auto-verify in dev if SMTP not configured)
+  - Forgot password + reset password flow
+  - Google OAuth (Authlib + redirect to frontend callback)
+  - GET /auth/me — returns user profile + all workspaces
+Collections: users, workspace_members
+
+MODULE 2: WORKSPACE MANAGEMENT [FULLY IMPLEMENTED]
+---------------------------------------------------
+Files: services/workspace_service.py, endpoints/workspaces.py
+Features:
+  - Get/update workspace settings (name, support email, language)
+  - Update branding (logo URL, primary color, company name)
+  - List workspace members
+  - Invite member by email (sends invite email)
+  - Update member role / remove member
+  - Owner cannot be removed or reassigned
+Collection: workspaces
+
+MODULE 3: KNOWLEDGE BASE [FULLY IMPLEMENTED]
+---------------------------------------------
+Files: services/knowledge_service.py, endpoints/knowledge.py
+Features:
+  - Upload documents: PDF, DOCX, TXT, MD, CSV, HTML
+  - Async processing via Celery (status: pending → processing → indexed)
+  - Knowledge base stats dashboard (docs, pages, tokens, coverage %)
+  - Delete document (removes from S3, Pinecone, MongoDB)
+Collections: documents, document_chunks
+
+MODULE 4: WEBSITE CRAWLER [BASIC IMPLEMENTED]
+---------------------------------------------
+Files: services/crawler_service.py, utils/crawler.py, workers/crawler_tasks.py
+Features:
+  - Submit URL → Celery crawls with BeautifulSoup (max depth 2, same domain)
+  - Crawled pages fed into same ingestion pipeline as uploads
+  - Scheduled re-sync via Celery Beat (daily at 03:00 UTC)
+  - Manual sync trigger endpoint
+Collection: crawler_jobs
+
+MODULE 5: RAG ENGINE [FULLY IMPLEMENTED]
+-----------------------------------------
+Files: ai/rag_engine.py, ai/embeddings.py, ai/vector_store.py, ai/llm_client.py
+Features:
+  - Full query pipeline (see Section 7)
+  - Hybrid vector + keyword search
+  - Query rewriting with conversation history
+  - Confidence scoring + auto-escalation
+  - Redis caching (1 hour TTL)
+  - Streaming responses (SSE via query_stream)
+  - Source attribution with document/page references
+  - LLM fallback chain: OpenAI → Claude → Demo mode
+
+MODULE 6: AI CHATBOT BUILDER [FULLY IMPLEMENTED]
+-------------------------------------------------
+Files: services/chatbot_service.py, endpoints/chatbots.py
+Features:
+  - CRUD chatbots per workspace
+  - Customization: name, welcome message, primary color, theme,
+    language, tone, personality, avatar URL
+  - Link to specific document subset
+  - Active/inactive toggle
+Collection: chatbots
+
+MODULE 7: CHAT WIDGET [IMPLEMENTED — PARTIAL]
+----------------------------------------------
+Files: widget/src/widget.ts
+Features:
+  - Standalone Vite-built IIFE JavaScript bundle
+  - Floating chat button, chat window
+  - Conversation history (localStorage + server sync)
+  - Typing indicator, thumbs up/down feedback
+  - Human escalation button
+  - Mobile responsive
+Embed code:
+  <script src="https://your-domain.com/widget.js" data-chatbot-id="xxx"></script>
+Public API: POST /api/v1/public/chat/{id}/message (no auth, rate-limited)
+
+MODULE 8: LIVE CHAT [PARTIAL]
+------------------------------
+Files: endpoints/websocket.py, services/conversation_service.py
+Features:
+  - WebSocket at /ws/conversations/{id}
+  - Real-time: typing status, seen status, agent messages
+  - Agent assignment API
+  - Conversation list for agents
+Not yet: online status, conversation transfer UI, internal notes
+
+MODULE 9: SUPPORT TICKETS [FULLY IMPLEMENTED]
+----------------------------------------------
+Files: services/ticket_service.py, endpoints/tickets.py
+Features:
+  - CRUD tickets with categories, priorities, statuses
+  - Ticket comments (internal notes supported via is_internal flag)
+  - Status workflow: open → pending → resolved → closed
+  - Agent assignment
+  - Link to originating conversation
+Collections: tickets, ticket_comments
+
+MODULE 10: AI TICKET GENERATION [FULLY IMPLEMENTED]
+----------------------------------------------------
+Files: services/ticket_service.py (auto_create_from_conversation)
+Trigger: RAG confidence < 0.6 OR user clicks "Talk to human agent"
+AI generates:
+  - Ticket title
+  - Conversation summary
+  - Detected customer intent
+  - Suggested resolution steps
+  - Priority level (low/medium/high/critical)
+  - Category (technical/billing/refund/feature_request/bug_report)
+
+MODULE 11: SEMANTIC SEARCH [PARTIAL]
+-------------------------------------
+Files: services/search_service.py, endpoints/search.py
+Features:
+  - Vector search across document chunks
+  - Keyword search fallback
+  - Ticket title/description keyword match
+Not yet: search across conversations and FAQs
+
+MODULE 12: CONVERSATION MEMORY [PARTIAL]
+-----------------------------------------
+Files: services/conversation_service.py, ai/rag_engine.py
+Short-term: Last 6 messages injected into RAG prompt context
+Long-term: Conversation summarization via Celery task after session ends
+Customer history: get_customer_history() method (no public API yet)
+
+MODULE 13: ANALYTICS DASHBOARD [IMPLEMENTED]
+---------------------------------------------
+Files: services/analytics_service.py, frontend dashboard/analytics
+Metrics tracked:
+  - Total / resolved / escalated conversations
+  - Average response time
+  - CSAT score
+  - Ticket volume
+  - Chatbot accuracy (avg confidence)
+  - Top 10 most asked questions
+  - Confidence trend over time
+Nightly aggregation via Celery Beat at 02:00 UTC
+Collection: analytics
+
+MODULE 14: CUSTOMER FEEDBACK [IMPLEMENTED]
+-------------------------------------------
+Files: services/feedback_service.py
+Features:
+  - Thumbs up/down after each bot response
+  - Star rating (1-5)
+  - Optional comment
+  - CSAT score calculation (% of ratings >= 4)
+Collection: feedback
+
+MODULE 15: AI ADMIN ASSISTANT [BASIC]
+--------------------------------------
+Files: services/admin_assistant_service.py, endpoints/admin_assistant.py
+Admin can ask natural language questions about analytics data.
+LLM answers using current analytics overview as context.
+Restricted to owner/admin roles.
+
+MODULE 16: VOICE CHATBOT [STUB — 501]
+---------------------------------------
+Files: services/voice_service.py, endpoints/voice.py
+Planned: Whisper STT + OpenAI TTS
+Currently returns HTTP 501 Not Implemented
+
+MODULE 17: WHATSAPP INTEGRATION [STUB]
+---------------------------------------
+Files: services/integration_service.py
+Webhook endpoint exists but returns 501
+Planned: Meta Business API message routing
+
+MODULE 18: SLACK INTEGRATION [STUB]
+------------------------------------
+Same integration service pattern as WhatsApp
+Planned: Slack Events API for ticket notifications
+
+MODULE 19: EMAIL SUPPORT [PARTIAL]
+-----------------------------------
+Files: utils/email_service.py
+Implemented: SMTP for auth emails (verification, password reset, invites)
+Not implemented: IMAP inbox monitoring, ticket-from-email, AI draft replies
+
+MODULE 20: API PLATFORM [PARTIAL]
+----------------------------------
+Files: services/api_platform_service.py, endpoints/api_keys.py
+Implemented:
+  - Create API key (shown once, stored as SHA-256 hash)
+  - List keys (prefix only, never full key)
+  - Revoke key
+Not implemented: API key auth middleware on routes, usage tracking
+
+MODULE 21: SUBSCRIPTION BILLING [PARTIAL]
+------------------------------------------
+Files: services/billing_service.py, endpoints/billing.py
+Implemented:
+  - Plan limits definition (Free/Starter/Professional/Enterprise)
+  - Read current subscription
+Not implemented: Stripe Checkout, webhooks (returns 501)
+Collection: subscriptions
+
+
+================================================================================
+SECTION 7: RAG PIPELINE — DEEP DIVE
+================================================================================
+
+DOCUMENT INGESTION PIPELINE
+----------------------------
+
+  Step 1: UPLOAD
+    User uploads file via dashboard or API
+    POST /api/v1/knowledge/documents/upload
+    Allowed: .pdf .docx .doc .txt .md .csv .html .htm
+
+  Step 2: STORE
+    File saved to AWS S3 or local ./uploads directory
+    MongoDB document record created with status: "pending"
+
+  Step 3: QUEUE (Celery)
+    process_document.delay(document_id, workspace_id)
+    API returns immediately — processing happens in background
+
+  Step 4: EXTRACT TEXT
+    PDF    → PyPDF + PDFPlumber fallback
+    DOCX   → python-docx
+    HTML   → BeautifulSoup (removes nav/footer/script tags)
+    TXT/MD → direct UTF-8 decode
+    Text cleaned: whitespace normalized, excessive newlines removed
+
+  Step 5: CHUNK
+    LangChain RecursiveCharacterTextSplitter
+    chunk_size=800, chunk_overlap=150
+    Each chunk gets: chunk_id, page_number, source, token_count
+
+  Step 6: EMBED
+    OpenAI text-embedding-3-small → 1536-dim vector per chunk
+    Fallback: SHA-256 hash → deterministic pseudo-vector (dev mode)
+
+  Step 7: STORE VECTORS
+    Pinecone upsert in namespace: workspace_{workspace_id}
+    Metadata: content (first 1000 chars), document_id, page_number, source
+
+  Step 8: STORE METADATA
+    MongoDB document_chunks collection
+    Document status updated to: "indexed"
+
+
+QUERY / ANSWER PIPELINE
+------------------------
+
+  Step 1: CACHE CHECK
+    Redis key: rag:{md5(workspace_id + question)}
+    TTL: 3600 seconds (1 hour)
+    Return cached result if hit
+
+  Step 2: QUERY REWRITING
+    If conversation history exists:
+      LLM rewrites follow-up into standalone search query
+    Example: "What about refunds?" → "What is the refund policy?"
+
+  Step 3: EMBED QUERY
+    Same embedding model as ingestion
+    Query → 1536-dim vector
+
+  Step 4: VECTOR SEARCH
+    Pinecone query: top 20 results (RAG_TOP_K=20)
+    Filtered by workspace namespace
+
+  Step 5: KEYWORD SEARCH
+    MongoDB regex search on document_chunks.content
+    Top 5 additional results (score: 0.5 fixed)
+
+  Step 6: RERANK & DEDUPLICATE
+    Sort all results by score descending
+    Remove duplicate content (first 100 chars match)
+    Keep top 5 (RAG_RERANK_TOP_K=5)
+
+  Step 7: BUILD CONTEXT WINDOW
+    Format: [Source N: filename, page X]\n{chunk content}
+    All 5 chunks joined with --- separators
+    Injected into SUPPORT_SYSTEM_PROMPT
+
+  Step 8: LLM GENERATION
+    System prompt: company name, tone, personality, context, rules
+    Messages: system + last 6 history messages + user question
+    Model: GPT-4o (primary) → Claude (fallback) → demo message
+
+  Step 9: CONFIDENCE SCORING
+    Signal 1: Average retrieval similarity score
+    Signal 2: LLM self-rating (0.0–1.0)
+    Final confidence = max(LLM score, avg retrieval score)
+
+  Step 10: AUTO-ESCALATION
+    If confidence < CONFIDENCE_THRESHOLD (0.6):
+      - Conversation status → "escalated"
+      - TicketService.auto_create_from_conversation()
+      - AI generates ticket title, summary, intent, priority
+
+  Step 11: RETURN & CACHE
+    Response: { content, confidence, sources[], should_escalate }
+    Cache result in Redis for 1 hour
+
+
+PROMPT TEMPLATE (SUPPORT_SYSTEM_PROMPT)
+----------------------------------------
+Rules enforced in prompt:
+  - Answer ONLY from provided context
+  - Say "I don't know" if context insufficient
+  - Always cite sources
+  - Never hallucinate
+  - Suggest human agent for billing/account issues
+
+
+================================================================================
+SECTION 8: MULTI-TENANT ARCHITECTURE
+================================================================================
+
+WHAT IS MULTI-TENANCY?
+-----------------------
+One application instance serves thousands of companies (tenants).
+Each company's data must be completely isolated from others.
+
+HOW ISOLATION IS ENFORCED (3 LAYERS)
+------------------------------------
+
+  Layer 1 — REQUEST CONTEXT
+    Every authenticated request carries workspace_id via:
+      - JWT claim: workspace_id in access token
+      - HTTP header: X-Workspace-Id
+    get_tenant_context() in deps.py validates:
+      - User is authenticated
+      - User is a member of the requested workspace
+    Result: TenantContext(workspace_id, user_id, role) on request.state
+
+  Layer 2 — REPOSITORY FILTER
+    BaseRepository._base_filter() automatically adds:
+      { "workspace_id": self.workspace_id }
+    to every MongoDB query when repository is workspace-scoped.
+    No unscoped reads possible through repository layer.
+
+  Layer 3 — VECTOR NAMESPACE
+    Pinecone namespace: workspace_{workspace_id}
+    Vectors from Company A can never appear in Company B's search results.
+
+DATA MODEL
+----------
+  users            → global (no workspace_id)
+  workspaces       → one per company
+  workspace_members → links users to workspaces with roles
+  ALL other collections → have workspace_id field
+
+
+================================================================================
+SECTION 9: AUTHENTICATION & AUTHORIZATION
+================================================================================
+
+SIGNUP FLOW
+-----------
+  1. POST /auth/signup { email, password, full_name, workspace_name }
+  2. Create user document (password hashed with bcrypt)
+  3. Create workspace document (auto-generated slug)
+  4. Create workspace_member (role: owner)
+  5. Send verification email (or auto-verify if no SMTP)
+  6. Return JWT access + refresh tokens
+
+LOGIN FLOW
+----------
+  1. POST /auth/login { email, password }
+  2. Verify bcrypt password hash
+  3. Find user's workspace memberships
+  4. Generate tokens with workspace_id + role claims
+  5. Return tokens
+
+TOKEN REFRESH FLOW
+------------------
+  1. Access token expires (30 min)
+  2. Frontend Axios interceptor catches 401
+  3. POST /auth/refresh { refresh_token }
+  4. New access + refresh tokens issued
+  5. Original request retried automatically
+
+GOOGLE OAUTH FLOW
+-----------------
+  1. GET /auth/google/login → redirect to Google
+  2. User authenticates with Google
+  3. GET /auth/google/callback → Authlib processes token
+  4. handle_oauth_user() — create or find user
+  5. Redirect to frontend: /auth/callback?access_token=...&refresh_token=...
+  6. Frontend stores tokens, calls /auth/me, redirects to dashboard
+
+RBAC — ROLES & PERMISSIONS
+---------------------------
+
+  ROLE      PERMISSIONS
+  ------    -----------
+  owner     ALL (9 permissions)
+  admin     All except MANAGE_BILLING
+  agent     MANAGE_TICKETS, VIEW_ANALYTICS, LIVE_CHAT
+  viewer    VIEW_ANALYTICS only
+
+  PERMISSIONS LIST:
+    MANAGE_WORKSPACE      — update workspace settings/branding
+    MANAGE_MEMBERS        — invite, update role, remove members
+    MANAGE_KNOWLEDGE      — upload/delete documents, crawler
+    MANAGE_CHATBOTS       — create/edit/delete chatbots
+    MANAGE_TICKETS        — full ticket management
+    VIEW_ANALYTICS        — view dashboard metrics
+    MANAGE_BILLING        — subscription management
+    MANAGE_INTEGRATIONS   — connect WhatsApp/Slack/Email
+    LIVE_CHAT             — access live chat agent interface
+
+  ENFORCEMENT:
+    require_permission(Permission.MANAGE_KNOWLEDGE) on endpoint
+    require_roles(UserRole.OWNER, UserRole.ADMIN) for admin assistant
+
+
+================================================================================
+SECTION 10: DATABASE SCHEMA (MongoDB)
+================================================================================
+
+Database name: support_ai
+Driver: Motor (async)
+Indexes created automatically on app startup (database.py lifespan)
+
+COLLECTION: users
+  email (unique), password_hash, full_name, is_verified,
+  oauth_provider, verification_token, reset_token, reset_token_expires,
+  created_at, updated_at
+
+COLLECTION: workspaces
+  name, slug (unique), branding{}, settings{}, plan (free/starter/pro/enterprise),
+  created_at, updated_at
+
+COLLECTION: workspace_members
+  workspace_id, user_id, role (owner/admin/agent/viewer)
+  Index: (workspace_id + user_id) unique
+
+COLLECTION: documents
+  workspace_id, filename, file_type, s3_key, status (pending/processing/indexed/failed),
+  token_count, page_count, chunk_count, source (upload/crawler), file_size, error
+
+COLLECTION: document_chunks
+  workspace_id, document_id, chunk_id, content, page_number, source,
+  token_count, embedding_model
+
+COLLECTION: chatbots
+  workspace_id, name, welcome_message, primary_color, theme, language,
+  tone, personality, avatar_url, document_ids[], is_active
+
+COLLECTION: conversations
+  workspace_id, chatbot_id, customer_id, status (active/escalated/resolved/closed),
+  message_count, last_message_at, last_confidence, assigned_agent_id, summary
+
+COLLECTION: messages
+  conversation_id, workspace_id, role (user/assistant/agent/system),
+  content, confidence, sources[], author_id, created_at
+
+COLLECTION: tickets
+  workspace_id, title, description, category, priority, status,
+  conversation_id, ai_summary, detected_intent, suggested_resolution,
+  auto_generated, confidence_at_escalation, assigned_agent_id, created_by
+
+COLLECTION: ticket_comments
+  ticket_id, workspace_id, author_id, content, is_internal, created_at
+
+COLLECTION: feedback
+  workspace_id, message_id, rating (1-5), comment, thumbs (up/down)
+
+COLLECTION: analytics
+  workspace_id, date (YYYY-MM-DD), metrics{} — unique per workspace+date
+
+COLLECTION: subscriptions
+  workspace_id (unique), plan, stripe_customer_id, usage{}
+
+COLLECTION: api_keys
+  workspace_id, name, key_hash (SHA-256, unique), key_prefix, permissions[], rate_limit
+
+COLLECTION: crawler_jobs
+  workspace_id, url, schedule, max_depth, status, pages_crawled, last_sync, error
+
+COLLECTION: integrations
+  workspace_id, type (whatsapp/slack/email), config{}, is_active
+
+COLLECTION: audit_logs
+  workspace_id, user_id, action, resource, method, status_code, duration_ms, timestamp
+
+PINECONE INDEX: support-kb
+  Dimension: 1536 | Metric: cosine | Namespace: workspace_{id} per tenant
+
+
+================================================================================
+SECTION 11: API ENDPOINTS REFERENCE
+================================================================================
+
+Base URL: http://localhost:8001/api/v1  (or :8000 in Docker)
+Docs:     http://localhost:8001/docs
+
+AUTH (no workspace header needed)
+  POST   /auth/signup
+  POST   /auth/login
+  POST   /auth/refresh
+  POST   /auth/verify-email
+  POST   /auth/forgot-password
+  POST   /auth/reset-password
+  GET    /auth/me                    [Bearer token required]
+  GET    /auth/google/login
+  GET    /auth/google/callback
+
+WORKSPACES [Bearer + X-Workspace-Id]
+  GET    /workspaces/current
+  PATCH  /workspaces/current
+  PATCH  /workspaces/current/branding
+  GET    /workspaces/current/members
+  POST   /workspaces/current/members
+  PATCH  /workspaces/current/members/{user_id}
+  DELETE /workspaces/current/members/{user_id}
+
+KNOWLEDGE BASE [MANAGE_KNOWLEDGE permission]
+  POST   /knowledge/documents/upload  (multipart file)
+  GET    /knowledge/documents
+  DELETE /knowledge/documents/{id}
+  GET    /knowledge/stats
+
+CRAWLER [MANAGE_KNOWLEDGE]
+  POST   /crawler/jobs
+  GET    /crawler/jobs
+  POST   /crawler/jobs/{id}/sync
+
+CHATBOTS [MANAGE_CHATBOTS]
+  POST   /chatbots
+  GET    /chatbots
+  GET    /chatbots/{id}
+  PATCH  /chatbots/{id}
+  DELETE /chatbots/{id}
+
+PUBLIC CHAT [no auth — rate limited 30/min]
+  GET    /public/chat/{chatbot_id}/config
+  POST   /public/chat/{chatbot_id}/message
+  POST   /public/chat/{chatbot_id}/escalate
+  POST   /public/chat/feedback
+
+AGENT CHAT [LIVE_CHAT permission]
+  GET    /chat/conversations
+  GET    /chat/conversations/{id}
+  POST   /chat/conversations/{id}/assign
+
+TICKETS [MANAGE_TICKETS]
+  POST   /tickets
+  GET    /tickets
+  GET    /tickets/{id}
+  PATCH  /tickets/{id}
+  POST   /tickets/{id}/comments
+  GET    /tickets/{id}/comments
+
+ANALYTICS [VIEW_ANALYTICS]
+  GET    /analytics/overview
+  GET    /analytics/historical?start_date=&end_date=
+  GET    /analytics/csat
+
+SEARCH [MANAGE_KNOWLEDGE]
+  GET    /search?q=
+
+INTEGRATIONS [MANAGE_INTEGRATIONS]
+  GET    /integrations
+  POST   /integrations/{type}/connect
+  DELETE /integrations/{id}
+
+BILLING [MANAGE_BILLING]
+  GET    /billing/subscription
+  POST   /billing/checkout
+
+API KEYS [MANAGE_WORKSPACE]
+  POST   /api-keys
+  GET    /api-keys
+  DELETE /api-keys/{id}
+
+ADMIN ASSISTANT [owner/admin only]
+  POST   /admin-assistant/query
+
+VOICE [stub — 501]
+  POST   /voice/stt
+  POST   /voice/tts
+
+WEBSOCKET
+  WS     /ws/conversations/{id}
+
+SYSTEM
+  GET    /health
+  GET    /metrics  (Prometheus)
+  GET    /docs     (Swagger UI)
+
+
+================================================================================
+SECTION 12: FRONTEND ARCHITECTURE
+================================================================================
+
+PAGES (Next.js 15 App Router)
+------------------------------
+  /                          Landing page (marketing)
+  /features                  Features showcase
+  /pricing                   Pricing tiers
+  /login                     Login form (split-screen auth layout)
+  /signup                    Registration form
+  /forgot-password           Password reset request
+  /auth/callback             Google OAuth token handler
+  /dashboard                 Overview metrics (4 KPI cards)
+  /dashboard/knowledge-base  Document upload + list + stats
+  /dashboard/sources         Website crawler management
+  /dashboard/chatbots        Chatbot builder + embed code
+  /dashboard/live-chat       Active conversations list
+  /dashboard/tickets         Ticket list with status badges
+  /dashboard/analytics       Recharts line + bar charts
+  /dashboard/integrations    Coming soon cards
+  /dashboard/billing         Static pricing cards
+  /dashboard/settings        Workspace settings form
+
+STATE MANAGEMENT
+----------------
+  Zustand (auth-store.ts):
+    - user, workspaces, currentWorkspace
+    - Persisted to localStorage
+    - Tokens stored in localStorage (access_token, refresh_token, workspace_id)
+
+  TanStack React Query (app-providers.tsx):
+    - Server state for all API data
+    - 30 second stale time
+    - Automatic refetch on window focus
+
+  Axios (lib/api.ts):
+    - Base URL from NEXT_PUBLIC_API_URL env var
+    - Request interceptor: adds Authorization + X-Workspace-Id headers
+    - Response interceptor: auto-refresh on 401, redirect to /login on failure
+
+UI DESIGN SYSTEM
+----------------
+  Color scheme: Emerald teal primary (#10b981) + cyan accent
+  Font: Plus Jakarta Sans
+  Components: Shadcn UI (Button, Card, Input, Badge, Label)
+  Dark sidebar for dashboard navigation
+  Glass morphism on marketing navbar
+  Gradient brand utilities (teal → cyan)
+  Dark/light mode via next-themes
+
+DASHBOARD AUTH GUARD
+--------------------
+  dashboard/layout.tsx:
+    1. Check localStorage for access_token
+    2. If missing → redirect to /login
+    3. If no user in Zustand → call /auth/me to hydrate state
+    4. Show loading spinner while checking
+
+
+================================================================================
+SECTION 13: BACKGROUND JOBS (CELERY)
+================================================================================
+
+CELERY CONFIGURATION
+  Broker:     redis://localhost:6379/1
+  Backend:    redis://localhost:6379/2
+  App name:   support_ai
+  Serializer: JSON
+
+TASKS
+-----
+  process_document(document_id, workspace_id)
+    Trigger: On document upload
+    Action:  Full ingestion pipeline (extract → chunk → embed → store)
+    Retries: Max 3, 60 second countdown
+    File:    workers/ingestion_tasks.py
+
+  crawl_website(job_id, workspace_id)
+    Trigger: Manual sync or scheduled
+    Action:  BeautifulSoup crawl → ingest each page
+    Retries: Max 2, 120 second countdown
+    File:    workers/crawler_tasks.py
+
+  aggregate_daily_analytics()
+    Trigger: Celery Beat — daily at 02:00 UTC
+    Action:  Compute metrics snapshot per workspace for yesterday
+    File:    workers/analytics_tasks.py
+
+  sync_scheduled_crawlers()
+    Trigger: Celery Beat — daily at 03:00 UTC
+    Action:  Re-run all non-running crawler jobs
+    File:    workers/crawler_tasks.py
+
+  summarize_conversation(conversation_id, workspace_id)
+    Trigger: Manual / post-session (not scheduled)
+    Action:  LLM generates 2-3 sentence conversation summary
+    File:    workers/analytics_tasks.py
+
+
+================================================================================
+SECTION 14: DOCKER & DEVOPS
+================================================================================
+
+DOCKER COMPOSE SERVICES (infrastructure/docker-compose.yml)
+------------------------------------------------------------
+  mongodb        Port 27017   Primary database (volume: mongodb_data)
+  redis          Port 6379    Cache + Celery broker
+  backend        Port 8000    FastAPI (uvicorn)
+  celery-worker  —            Background task processor
+  celery-beat    —            Scheduled task scheduler
+  frontend       Port 3000    Next.js dashboard
+  nginx          Port 80      Reverse proxy
+  prometheus     Port 9090    Metrics collection
+  grafana        Port 3001    Dashboards (admin/admin)
+
+NGINX ROUTING
+  /api/     → backend:8000
+  /ws/      → backend:8000 (WebSocket upgrade)
+  /docs     → backend:8000
+  /health   → backend:8000
+  /metrics  → backend:8000
+  /         → frontend:3000
+
+CI/CD PIPELINE (.github/workflows/ci.yml)
+  Job 1: backend-test   — Python 3.12, pytest, ruff lint
+  Job 2: frontend-build — Node 20, npm ci, npm run build
+  Job 3: widget-build   — Vite build
+  Job 4: docker-build   — docker compose build (main branch only)
+  Job 5: e2e              — Playwright smoke tests (main branch)
+
+HOW TO RUN LOCALLY
+------------------
+  Prerequisites: Python 3.12, Node 20, MongoDB running on 27017
+
+  Backend:
+    cd backend
+    pip install -r requirements.txt
+    python -m uvicorn app.main:app --reload --port 8001
+
+  Frontend:
+    cd frontend
+    npm install
+    set NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1
+    npx next dev --port 3002
+
+  Access:
+    Dashboard:  http://localhost:3002
+    API Docs:   http://localhost:8001/docs
+    Health:     http://localhost:8001/health
+
+
+================================================================================
+SECTION 15: SECURITY FEATURES
+================================================================================
+
+  JWT Authentication        Access (30min) + Refresh (7 days) tokens
+  bcrypt Password Hashing   passlib with bcrypt, never store plain passwords
+  RBAC                      4 roles, 9 granular permissions
+  Tenant Isolation          workspace_id on all data + Pinecone namespaces
+  Rate Limiting             30 req/min on public chat endpoint (SlowAPI)
+  Audit Logging             All mutations logged to audit_logs collection
+  Email Verification        Required before accessing protected routes
+  CORS Whitelist            Configurable allowed origins
+  OAuth State               SessionMiddleware for Google OAuth CSRF protection
+  API Key Hashing           SHA-256 stored, raw key shown only once at creation
+  File Upload Validation    Extension whitelist, 20MB nginx limit
+  S3 Presigned URLs         No direct bucket access for downloads
+  Prometheus Metrics        /metrics endpoint for monitoring
+  Input Validation          Pydantic schemas on all API inputs
+
+NOT YET IMPLEMENTED:
+  API key auth middleware on protected routes
+  CSRF tokens on form mutations
+  XSS sanitization layer
+  Secrets management (uses .env file)
+
+
+================================================================================
+SECTION 16: TESTING
+================================================================================
+
+BACKEND TESTS (pytest)
+  tests/unit/test_security.py         — JWT, password hashing
+  tests/unit/test_chunking.py         — text splitting, token estimation
+  tests/unit/test_document_processor.py — text extraction, cleaning
+  tests/integration/test_health.py    — /health and / endpoints
+  Run: cd backend && pytest tests/ -v
+
+FRONTEND TESTS
+  Jest: src/__tests__/utils.test.ts   — cn() utility function
+  Playwright E2E: e2e/landing.spec.ts — landing page, signup/login navigation
+  Run: cd frontend && npm test
+
+
+================================================================================
+SECTION 17: DESIGN PATTERNS USED
+================================================================================
+
+PATTERN                  WHERE USED                        WHY
+-----------------------  --------------------------------  ---------------------------
+Repository Pattern       repositories/*.py                 Isolate DB logic from business
+Service Layer            services/*.py                     Business rules separate from HTTP
+Dependency Injection     core/deps.py, endpoint Depends()  Testable, loosely coupled
+DTO / Schema Pattern     schemas/*.py                      API contracts ≠ DB documents
+Strategy Pattern         ai/llm_client.py, vector_store.py Provider fallback chains
+Middleware Pipeline      main.py                           Cross-cutting concerns
+Factory Pattern          get_service(tenant) closures      Inject workspace_id into services
+Async Task Queue         Celery workers                    Non-blocking long operations
+Multi-tenant Context     TenantContext + request.state     Thread-safe tenant isolation
+Prompt Engineering       ai/prompts/support.py             Consistent, safe LLM behavior
+
+
+================================================================================
+SECTION 18: INTERVIEW QUESTIONS & ANSWERS
+================================================================================
+
+Q1: What is this project and what problem does it solve?
+A:  SupportAI is a multi-tenant SaaS platform that lets companies build
+    AI customer support chatbots trained on their own documents and websites.
+    It solves the problem of companies repeatedly answering the same support
+    questions by using RAG to retrieve company-specific information before
+    generating AI responses, reducing support workload by up to 70%.
+
+Q2: Why did you choose RAG instead of fine-tuning an LLM?
+A:  RAG is better for this use case because:
+    (1) Knowledge updates instantly when documents change — no retraining
+    (2) Source citations are possible — reduces hallucination risk
+    (3) Lower cost — no GPU training required
+    (4) Works with proprietary data without exposing it to model training
+    (5) Each tenant has isolated knowledge — fine-tuning can't do that easily
+
+Q3: Explain the RAG pipeline step by step.
+A:  Ingestion: Upload → S3 → Extract text → Chunk (800/150 overlap) →
+    Embed (OpenAI 1536-dim) → Store in Pinecone + MongoDB.
+    Query: Cache check → Query rewrite → Embed query → Vector search (top 20)
+    + Keyword search (top 5) → Rerank to top 5 → Build context → LLM generate
+    → Confidence score → Auto-escalate if < 0.6 → Return with sources.
+
+Q4: What is multi-tenancy and how did you implement it?
+A:  Multi-tenancy means one app serves many companies with isolated data.
+    We enforce isolation at 3 levels:
+    (1) JWT/header carries workspace_id, validated against workspace_members
+    (2) BaseRepository auto-filters all queries by workspace_id
+    (3) Pinecone uses separate namespace per workspace
+
+Q5: What tech stack did you use and why?
+A:  FastAPI for async Python backend with auto-generated OpenAPI docs.
+    Next.js 15 for SSR/SSG React frontend with App Router.
+    MongoDB for flexible document schema (schemaless, good for SaaS).
+    Pinecone for managed vector search (no ops overhead).
+    Celery + Redis for async document processing.
+    TypeScript throughout frontend for type safety.
+
+Q6: How does authentication work?
+A:  JWT-based stateless auth. On login, server issues access token (30 min)
+    and refresh token (7 days). Frontend stores in localStorage. Axios
+    interceptor adds Bearer token to every request. On 401, automatically
+    calls /auth/refresh to get new tokens. Google OAuth via Authlib redirects
+    to Google, callback creates/finds user, redirects to frontend with tokens.
+
+Q7: Explain the RBAC system.
+A:  4 roles: owner, admin, agent, viewer. 9 permissions mapped to roles
+    in ROLE_PERMISSIONS dict in models/enums.py. Endpoints use
+    require_permission(Permission.X) FastAPI dependency which checks
+    the user's role from workspace_members (not just JWT claim) and
+    raises 403 if permission missing.
+
+Q8: How does the chatbot widget work without authentication?
+A:  Widget calls public API endpoints (/public/chat/{chatbot_id}/message)
+    with no auth token. Security via: (1) rate limiting 30 req/min per IP,
+    (2) chatbot must be is_active=true, (3) chatbot_id is UUID (not guessable),
+    (4) customer_id generated client-side and stored in localStorage.
+
+Q9: What happens when the AI is not confident in its answer?
+A:  If confidence score < 0.6 (CONFIDENCE_THRESHOLD):
+    (1) Conversation status changes to "escalated"
+    (2) TicketService.auto_create_from_conversation() is called
+    (3) LLM generates ticket: title, summary, intent, priority, category
+    (4) Customer sees message that a human agent will help them
+
+Q10: How are documents processed after upload?
+A:  Upload returns immediately with status "pending". Celery task
+     process_document runs in background: downloads from S3 → extracts text
+     (PDF/DOCX/HTML/TXT) → chunks with LangChain → embeds each chunk →
+     upserts to Pinecone → saves metadata to MongoDB → updates status to
+     "indexed" or "failed" with error message.
+
+Q11: What is hybrid search and why use it?
+A:  Hybrid search combines vector (semantic) search with keyword (BM25/regex)
+     search. Vector search finds conceptually similar content even with
+     different words. Keyword search finds exact term matches. Together
+     they improve recall — vector might miss exact product names, keyword
+     might miss paraphrased questions.
+
+Q12: How did you structure the backend code?
+A:  Clean architecture with 4 layers:
+     Endpoints (thin HTTP handlers) → Services (business logic) →
+     Repositories (MongoDB access) → Schemas (Pydantic DTOs).
+     AI layer is separate (ai/ package). Cross-cutting concerns in
+     middleware/ and core/. Dependency injection via FastAPI Depends().
+
+Q13: What design patterns did you use?
+A:  Repository Pattern (data access), Service Layer (business logic),
+     Dependency Injection (FastAPI Depends), Strategy Pattern (LLM/vector
+     fallbacks), Factory Pattern (get_service closures), Middleware Pipeline
+     (audit, CORS, rate limit), Async Task Queue (Celery).
+
+Q14: How does the website crawler work?
+A:  User submits URL → Celery job starts → WebsiteCrawler class uses
+     BeautifulSoup + httpx async client → crawls same-domain links up to
+     depth 2, max 50 pages → each page's text fed into KnowledgeService.ingest_text()
+     → same ingestion pipeline as manual uploads. Re-syncs daily via Celery Beat.
+
+Q15: What is confidence scoring?
+A:  Two signals: (1) average cosine similarity of retrieved chunks (retrieval
+     quality), (2) LLM self-assessment asking "rate your confidence 0-1".
+     Final score = max of both. Low confidence triggers escalation to prevent
+     the bot from giving wrong answers to customers.
+
+Q16: How is the frontend state managed?
+A:  Three layers: (1) Zustand for auth state (user, workspace, tokens) —
+     persisted to localStorage. (2) TanStack React Query for all API/server
+     state — handles caching, refetching, loading states. (3) Local component
+     state (useState) for form inputs and UI toggles.
+
+Q17: What are the subscription plans?
+A:  Free: 10 docs, 1K messages, 1 chatbot, 2 users
+     Starter ($29): 100 docs, 10K messages, 3 chatbots, 5 users
+     Professional ($99): 1000 docs, 100K messages, 10 chatbots, 20 users
+     Enterprise (custom): unlimited everything + SSO + dedicated support
+     (Stripe billing integration is stubbed — plans defined in BillingService)
+
+Q18: What is Celery and why did you use it?
+A:  Celery is a distributed task queue. Document ingestion can take 30+
+     seconds (extract, chunk, embed 100s of chunks). Without Celery, the
+     API would block until complete. With Celery, API returns immediately,
+     processing happens in background worker. Redis is the message broker.
+
+Q19: How would you scale this to thousands of companies?
+A:  (1) Horizontal scale: multiple FastAPI instances behind Nginx load balancer
+     (2) MongoDB Atlas with sharding by workspace_id
+     (3) Pinecone serverless handles vector scaling automatically
+     (4) Scale celery-worker replicas for ingestion throughput
+     (5) Redis Cluster for HA caching
+     (6) S3 for unlimited document storage
+     (7) CDN for widget.js delivery
+
+Q20: What are the limitations / what would you improve?
+A:  Honestly: Stripe billing not wired, voice/WhatsApp/Slack are stubs,
+     API key auth middleware not connected to routes, no CSRF protection,
+     widget missing file upload and dark mode, semantic search doesn't cover
+     conversations, notifications collection unused, no SSO, no document
+     versioning, no team collaboration on knowledge base approval workflow.
+
+Q21: What is Pinecone and why not use MongoDB for vectors?
+A:  Pinecone is a purpose-built vector database optimized for similarity
+     search in high-dimensional spaces (1536 dims). MongoDB has Atlas Vector
+     Search but Pinecone offers better performance at scale, namespace
+     isolation, metadata filtering, and managed infrastructure. We have
+     an in-memory fallback for development without Pinecone API key.
+
+Q22: Explain the chunking strategy.
+A:  We use LangChain RecursiveCharacterTextSplitter with chunk_size=800
+     characters and chunk_overlap=150. It tries to split on paragraph
+     boundaries first, then sentences, then words — preserving semantic
+     coherence. Overlap ensures context isn't lost at chunk boundaries.
+     800 chars ≈ 500-1000 tokens, within the recommended RAG range.
+
+Q23: What is the embeddable widget and how does it integrate?
+A:  A standalone JavaScript bundle built with Vite (IIFE format).
+     Customer adds one script tag to their website:
+     <script src="widget.js" data-chatbot-id="xxx"></script>
+     Widget creates a floating chat button, fetches chatbot config from
+     public API, manages conversation via localStorage, sends messages
+     to public chat endpoint, shows typing indicator and feedback buttons.
+
+Q24: How do you prevent AI hallucinations?
+A:  Multiple techniques:
+     (1) RAG — answer grounded in retrieved context only
+     (2) Prompt rules — "answer ONLY from context, say I don't know otherwise"
+     (3) Confidence scoring — low confidence triggers human escalation
+     (4) Source citations — customer can verify answer against sources
+     (5) Temperature 0.3 — lower temperature = more deterministic responses
+
+Q25: What monitoring is in place?
+A:  Prometheus scrapes /metrics endpoint from FastAPI (via prometheus-fastapi-
+     instrumentator). Grafana dashboards on port 3001. Audit logs in MongoDB
+     for all mutations. Health check endpoint at /health. Celery task retries
+     with logging on failure.
+
+
+================================================================================
+SECTION 19: KEY FILES TO KNOW FOR INTERVIEW
+================================================================================
+
+BACKEND — MUST KNOW
+  app/main.py                         App entry, middleware, lifespan
+  app/core/deps.py                    Auth guards, tenant context, RBAC
+  app/core/security.py                JWT creation/validation, bcrypt
+  app/ai/rag_engine.py                Core RAG logic — most important AI file
+  app/services/chat_service.py        Chat flow + escalation trigger
+  app/services/knowledge_service.py   Document upload + ingestion trigger
+  app/services/auth_service.py        Signup/login/OAuth flows
+  app/repositories/base.py            Tenant-scoped CRUD pattern
+  app/models/enums.py                 All roles, permissions, statuses
+  app/workers/celery_app.py           Celery config + beat schedule
+
+FRONTEND — MUST KNOW
+  src/lib/api.ts                      Axios client, token refresh interceptor
+  src/stores/auth-store.ts            Zustand auth state
+  src/app/dashboard/layout.tsx        Auth guard for protected routes
+  src/providers/app-providers.tsx     React Query + theme setup
+
+INFRASTRUCTURE
+  infrastructure/docker-compose.yml   All 9 services
+  infrastructure/nginx/nginx.conf     Routing rules
+  .github/workflows/ci.yml            CI pipeline
+
+
+================================================================================
+SECTION 20: GLOSSARY OF TERMS
+================================================================================
+
+  RAG           Retrieval-Augmented Generation — retrieve docs then generate answer
+  LLM           Large Language Model (GPT-4o, Claude)
+  Embedding     Numerical vector representation of text for similarity search
+  Vector DB     Database optimized for similarity search (Pinecone)
+  Chunk         Segment of a document stored and searched independently
+  Namespace     Isolated partition in Pinecone per tenant
+  JWT           JSON Web Token — stateless authentication token
+  RBAC          Role-Based Access Control
+  SaaS          Software as a Service — cloud subscription software
+  Multi-tenant  One app instance serving multiple isolated customers
+  Celery        Python distributed task queue for background jobs
+  ASGI          Asynchronous Server Gateway Interface (Python async web standard)
+  DTO           Data Transfer Object — Pydantic schema for API input/output
+  IIFE          Immediately Invoked Function Expression (widget bundle format)
+  CSAT          Customer Satisfaction Score
+  SSE           Server-Sent Events — one-way streaming from server to client
+  OAuth         Open standard for authorization (Google login)
+  bcrypt        Password hashing algorithm
+  CORS          Cross-Origin Resource Sharing — browser security for APIs
+  Pinecone      Managed vector database service
+  Motor         Async MongoDB driver for Python
+  FastAPI       Modern Python web framework with automatic OpenAPI docs
+  LangChain     Framework for building LLM applications
+  Hybrid Search Combination of vector + keyword search
+  Hallucination When AI generates false/confident-sounding incorrect information
+
+
+================================================================================
+SECTION 21: 30-SECOND / 2-MINUTE / 5-MINUTE ELEVATOR PITCHES
+================================================================================
+
+30 SECONDS
+----------
+"I built SupportAI, a multi-tenant SaaS platform where companies upload their
+docs and get an AI support chatbot powered by RAG. It retrieves real company
+data before answering, auto-escalates to humans when unsure, and generates
+support tickets automatically. Stack: FastAPI, Next.js, MongoDB, Pinecone, Celery."
+
+2 MINUTES
+---------
+"SupportAI solves repetitive customer support for B2B companies. The core
+is a RAG pipeline — when a customer asks a question, we embed it, search
+the company's knowledge base using hybrid vector + keyword search, rerank the
+top chunks, and inject them as context into GPT-4o. The answer includes
+source citations and a confidence score. Below 60% confidence, it auto-creates
+a support ticket and escalates to a human agent.
+
+Architecturally it's a monorepo: FastAPI backend with clean architecture
+(endpoints → services → repositories), Next.js 15 dashboard, and a Vite-built
+embeddable widget. Multi-tenancy is enforced at JWT, repository, and Pinecone
+namespace levels. Document ingestion runs asynchronously via Celery. I implemented
+21 modules including auth with RBAC, workspace management, knowledge base,
+chatbot builder, ticketing, analytics, and WebSocket live chat."
+
+5 MINUTES
+---------
+[Use Sections 1, 4, 7, 8, 9, and 18 Q1-Q5 combined for a full walkthrough]
+
+
+================================================================================
+END OF INTERVIEW PREPARATION GUIDE
+================================================================================
+Generated for: AI Customer Support SaaS Platform (SupportAI)
+Last updated: 2026
+================================================================================

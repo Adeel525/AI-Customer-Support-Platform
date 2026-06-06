@@ -1,0 +1,26 @@
+# Production overrides - use with:
+# docker compose -f infrastructure/docker-compose.yml -f infrastructure/docker-compose.prod.yml up -d
+
+services:
+  backend:
+    restart: always
+    environment:
+      - DEBUG=false
+      - APP_ENV=production
+
+  frontend:
+    restart: always
+
+  celery-worker:
+    restart: always
+    deploy:
+      replicas: 2
+
+  nginx:
+    restart: always
+
+  mongodb:
+    restart: always
+
+  redis:
+    restart: always
