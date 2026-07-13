@@ -1,78 +1,83 @@
 # AI Customer Support SaaS Platform
 
-Production-grade multi-tenant SaaS platform for AI-powered customer support chatbots trained on company documents, websites, FAQs, and knowledge bases.
-
-## Features
-
-- Multi-tenant workspace management with RBAC
-- Knowledge base with document upload and website crawling
-- RAG-powered AI chatbot with source citations
-- Embeddable chat widget for any website
-- Live chat with WebSocket support
-- Automated support ticket generation
-- Analytics dashboard with CSAT tracking
-- API platform with rate limiting
-- Subscription billing (Stripe)
+Multi-tenant SaaS for AI-powered customer support chatbots trained on company documents, websites, and FAQs.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS, Shadcn UI |
-| Backend | FastAPI, Python 3.12 |
-| Database | MongoDB |
+| Frontend | Next.js 15, React 19, TypeScript, Tailwind CSS |
+| Backend | **Django 5.1 + Django REST Framework** |
+| Database | MongoDB (mongoengine) |
 | Vector DB | Pinecone |
-| Cache | Redis |
-| Jobs | Celery |
-| Storage | AWS S3 |
+| Cache / Jobs | Redis + Celery |
+| Storage | AWS S3 / local |
 | AI | OpenAI GPT-4o, Claude, LangChain |
 
 ## Quick Start
 
 ### Prerequisites
 
-- Docker & Docker Compose
-- Node.js 20+
-- Python 3.12+
+- Python 3.12+, Node.js 20+, MongoDB
 
-### Development
+### Backend (Django)
 
 ```bash
-# Copy environment variables
 cp .env.example .env
+cd backend
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py runserver 0.0.0.0:8001
+```
 
-# Start all services
-docker compose -f infrastructure/docker-compose.yml up -d
+### Frontend
 
-# Or run individually:
-
-# Backend
-cd backend && pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-
-# Frontend
-cd frontend && npm install && npm run dev
-
-# Widget
-cd widget && npm install && npm run build
+```bash
+cd frontend
+npm install
+set NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1
+npm run dev
 ```
 
 ### Access
 
-- Dashboard: http://localhost:3000
-- API: http://localhost:8000/api/v1
-- API Docs: http://localhost:8000/docs
-- Grafana: http://localhost:3001
+- Dashboard: http://localhost:3000 (or 3002)
+- API: http://localhost:8001/api/v1/
+- Health: http://localhost:8001/health
+- Admin: http://localhost:8001/admin/
+
+### Celery (optional)
+
+```bash
+cd backend
+celery -A config worker --loglevel=info
+celery -A config beat --loglevel=info
+```
+
+### Docker
+
+```bash
+docker compose -f infrastructure/docker-compose.yml up -d
+```
 
 ## Project Structure
 
 ```
-├── backend/          # FastAPI application
-├── frontend/         # Next.js dashboard
-├── widget/           # Embeddable chat widget
-├── infrastructure/   # Docker, Nginx, monitoring
-└── docs/             # Architecture & API documentation
+├── backend/                 # Django + DRF
+│   ├── config/              # settings, urls, wsgi, celery
+│   ├── api/                 # models, views, serializers, auth
+│   ├── core/                # AI/RAG, utils, enums
+│   └── manage.py
+├── frontend/                # Next.js dashboard
+├── widget/                  # Embeddable chat widget
+├── infrastructure/          # Docker, Nginx, monitoring
+└── docs/
 ```
+
+## API Compatibility
+
+Frontend routes under `/api/v1/` are unchanged after the FastAPI → Django migration
+(auth, workspaces, knowledge, chatbots, public chat, tickets, analytics, etc.).
 
 ## Documentation
 
@@ -80,7 +85,8 @@ cd widget && npm install && npm run build
 - [Database Schema](docs/DATABASE_SCHEMA.md)
 - [API Reference](docs/API.md)
 - [RAG Pipeline](docs/RAG_PIPELINE.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Deployment](docs/DEPLOYMENT.md)
+- [Interview prep](learning.txt)
 
 ## License
 

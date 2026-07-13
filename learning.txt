@@ -4,6 +4,7 @@
 
 Project Name    : SupportAI (AI Customer Support SaaS Platform)
 Type            : Production-grade Multi-Tenant SaaS
+Backend         : Django 5.1 + Django REST Framework (migrated from FastAPI)
 Tagline         : "Create an AI-powered customer support chatbot trained on
                    your company's documents, website, FAQs, and knowledge base."
 Monorepo Root   : AI Customer Support Platform/
@@ -35,6 +36,14 @@ Companies waste time answering repetitive support questions. This platform
 automates 70%+ of support using RAG — the AI retrieves real company data
 before generating answers, reducing hallucinations and improving accuracy.
 
+BACKEND EVOLUTION
+-----------------
+Originally built with FastAPI; migrated to Django REST Framework while keeping:
+  - Same /api/v1/ URL contract (frontend unchanged)
+  - MongoDB as primary datastore (via mongoengine)
+  - Same RAG / Celery / Pinecone architecture
+  FastAPI source kept for reference at: backend/app_fastapi_backup/
+
 
 ================================================================================
 SECTION 2: TECH STACK (WITH VERSIONS)
@@ -60,30 +69,35 @@ FRONTEND
 BACKEND
 -------
   Python               3.12
-  FastAPI              0.115       (async REST API framework)
-  Uvicorn              0.34        (ASGI server)
-  Pydantic             2.10        (data validation / schemas)
-  Motor                3.6         (async MongoDB driver)
-  python-jose          3.3         (JWT tokens)
+  Django               5.1         (web framework)
+  Django REST Framework 3.15       (REST API layer)
+  Gunicorn             23.x        (WSGI production server)
+  django-cors-headers  4.6         (CORS)
+  django-environ       0.11        (env config)
+  whitenoise           6.8         (static files)
+  mongoengine          0.29        (MongoDB ODM)
+  pymongo              4.9         (MongoDB driver)
+  PyJWT                2.10        (JWT access/refresh tokens)
   passlib + bcrypt     -           (password hashing)
-  Authlib              1.4         (Google OAuth)
   Celery               5.4         (background job queue)
   Redis                5.2         (cache + Celery broker)
-  SlowAPI              -           (rate limiting)
+  Channels             4.2         (optional WebSockets)
   LangChain            0.3         (text splitting / RAG utilities)
   OpenAI SDK           1.58        (GPT-4o + embeddings)
   Anthropic SDK        0.42        (Claude fallback)
   Pinecone Client      5.0         (vector database)
   boto3                1.35        (AWS S3 storage)
   BeautifulSoup        4.12        (website crawler)
+  httpx                0.28        (HTTP client for crawler)
   PyPDF / PDFPlumber   -           (PDF text extraction)
   python-docx          -           (Word document extraction)
   Stripe SDK           11.4        (billing — stubbed)
-  pytest               8.3         (backend tests)
+  pytest + pytest-django -         (backend tests)
 
 DATABASE & STORAGE
 ------------------
-  MongoDB              7           (primary transactional database)
+  MongoDB              7           (primary app data via mongoengine)
+  SQLite               -           (Django admin/sessions only)
   Pinecone             -           (vector embeddings, cosine similarity)
   Redis                7           (query cache + Celery message broker)
   AWS S3 / Local       -           (document file storage)
@@ -106,48 +120,37 @@ SECTION 3: PROJECT STRUCTURE
 ================================================================================
 
 AI Customer Support Platform/
-├── backend/
-│   ├── app/
-│   │   ├── main.py                 # FastAPI entry point
-│   │   ├── api/v1/
-│   │   │   ├── router.py           # Aggregates all API routers
-│   │   │   └── endpoints/          # 16 HTTP route modules
-│   │   ├── core/
-│   │   │   ├── config.py           # Environment settings (Pydantic)
-│   │   │   ├── database.py         # MongoDB connection + indexes
-│   │   │   ├── security.py         # JWT, password hashing
-│   │   │   ├── deps.py             # FastAPI dependency injection
-│   │   │   └── tenant.py           # TenantContext dataclass
-│   │   ├── middleware/
-│   │   │   ├── audit.py            # Audit log middleware
-│   │   │   └── rate_limit.py       # SlowAPI limiter
-│   │   ├── models/enums.py         # Roles, permissions, statuses
-│   │   ├── repositories/           # MongoDB data access layer
-│   │   ├── schemas/                # Pydantic request/response DTOs
-│   │   ├── services/                 # Business logic layer
-│   │   ├── ai/
-│   │   │   ├── rag_engine.py       # Core RAG pipeline
-│   │   │   ├── embeddings.py       # OpenAI embeddings
-│   │   │   ├── vector_store.py     # Pinecone client
-│   │   │   ├── llm_client.py       # OpenAI/Claude abstraction
-│   │   │   └── prompts/support.py  # Prompt templates
-│   │   ├── workers/                # Celery async tasks
-│   │   └── utils/                  # Storage, email, chunking, crawler
-│   └── tests/                      # pytest unit + integration tests
-├── frontend/
-│   └── src/
-│       ├── app/                    # Next.js pages (App Router)
-│       ├── components/             # UI + layout components
-│       ├── lib/api.ts              # Axios API client
-│       ├── stores/auth-store.ts    # Zustand auth state
-│       └── providers/              # React Query + theme
-├── widget/
-│   └── src/widget.ts               # Embeddable chat widget (IIFE)
-├── infrastructure/
-│   ├── docker-compose.yml
-│   ├── nginx/nginx.conf
-│   └── monitoring/prometheus.yml
-└── docs/                           # Architecture, API, schema docs
+├── backend/                     # Django + DRF
+│   ├── manage.py
+│   ├── config/
+│   │   ├── settings.py          # Django settings (env, CORS, DRF, Celery)
+│   │   ├── urls.py              # /health, /admin/, /api/v1/
+│   │   ├── wsgi.py              # Gunicorn entry
+│   │   ├── asgi.py
+│   │   └── celery.py            # Celery app + Beat schedule
+│   ├── api/                     # Main DRF application
+│   │   ├── apps.py              # mongoengine.connect() on ready()
+│   │   ├── models.py            # 18 mongoengine Document models
+│   │   ├── serializers.py       # DRF request serializers
+│   │   ├── authentication.py    # Custom JWTAuthentication + tenant helpers
+│   │   ├── permissions.py       # IsAuthenticatedJWT, HasWorkspacePermission
+│   │   ├── jwt_utils.py         # create/decode tokens, bcrypt helpers
+│   │   ├── urls.py              # All /api/v1/* routes
+│   │   ├── views/               # auth, workspaces, knowledge, chat, tickets, ...
+│   │   ├── services/            # knowledge process_document, ingest_text
+│   │   └── tasks.py             # Celery shared_tasks
+│   ├── core/
+│   │   ├── enums.py             # Roles, permissions, statuses
+│   │   ├── config.py            # Settings bridge for AI/utils
+│   │   ├── ai/                  # RAG engine, embeddings, LLM, vector store
+│   │   └── utils/               # storage, chunking, crawler, email
+│   ├── tests/
+│   └── app_fastapi_backup/      # Previous FastAPI implementation (reference)
+├── frontend/                    # Next.js 15 dashboard
+├── widget/                      # Embeddable chat widget
+├── infrastructure/              # Docker, Nginx, monitoring
+├── docs/
+└── learning.txt                 # This file
 
 
 ================================================================================
@@ -165,64 +168,71 @@ HIGH-LEVEL FLOW
      +--------+--------+
      |                 |
      v                 v
- [Next.js :3000]  [FastAPI :8000]
-  Dashboard UI      REST API + WebSocket
+ [Next.js :3000]  [Django+DRF :8000/8001]
+  Dashboard UI      REST API (Gunicorn / runserver)
                          |
           +--------------+--------------+
           |              |              |
           v              v              v
       [MongoDB]     [Pinecone]      [Redis]
-      (documents,   (embeddings)    (cache +
-       users,                        Celery)
-       tickets,
-       conversations)
+      (mongoengine) (embeddings)    (cache + Celery)
                          |
                          v
                     [AWS S3 / Local]
                     (uploaded files)
 
 
-BACKEND LAYERED ARCHITECTURE (Clean Architecture)
--------------------------------------------------
+BACKEND LAYERED ARCHITECTURE (Django + DRF)
+-------------------------------------------
 
-  Layer 1: ENDPOINTS (HTTP)
-    - Thin controllers — validate input, call service, return response
-    - Files: backend/app/api/v1/endpoints/*.py
+  Layer 1: VIEWS (HTTP)
+    - DRF APIView classes — validate input, enforce auth/RBAC, return Response
+    - Files: backend/api/views/*.py
 
-  Layer 2: SERVICES (Business Logic)
-    - Orchestrate repositories, AI engines, external APIs
-    - Files: backend/app/services/*.py
+  Layer 2: SERIALIZERS (Contracts)
+    - DRF Serializer classes for request validation
+    - Files: backend/api/serializers.py
 
-  Layer 3: REPOSITORIES (Data Access)
-    - MongoDB CRUD with tenant-scoped queries
-    - Files: backend/app/repositories/*.py
+  Layer 3: MODELS (Data Access)
+    - mongoengine Document models (User, Workspace, Document, Ticket, ...)
+    - Tenant scoping via workspace_id fields on queries
+    - Files: backend/api/models.py
 
-  Layer 4: SCHEMAS (Contracts)
-    - Pydantic models for request/response validation
-    - Files: backend/app/schemas/*.py
+  Layer 4: SERVICES (Business Helpers)
+    - Document ingestion, crawl ingest helpers
+    - Files: backend/api/services/
 
   Layer 5: AI LAYER (Intelligence)
-    - RAG, embeddings, LLM, vector store
-    - Files: backend/app/ai/*.py
+    - Sync RAG, embeddings, LLM, vector store
+    - Files: backend/core/ai/*.py
 
-  Layer 6: WORKERS (Async Jobs)
-    - Celery tasks for long-running operations
-    - Files: backend/app/workers/*.py
+  Layer 6: TASKS (Async Jobs)
+    - Celery shared_tasks for long-running operations
+    - Files: backend/api/tasks.py
 
 
 REQUEST FLOW EXAMPLE (Send Chat Message)
 -----------------------------------------
 
   1. Widget POST /api/v1/public/chat/{chatbot_id}/message
-  2. Rate limiter checks IP (30 requests/minute)
-  3. ChatbotRepository.get_public() — validate chatbot exists
-  4. ChatService.send_message()
-       a. Create/find conversation in MongoDB
-       b. Save user message
-       c. RAGEngine.query() — embed, search, rerank, LLM generate
-       d. Save assistant message with confidence + sources
-       e. If confidence < 0.6 → TicketService.auto_create_from_conversation()
-  5. Return JSON: { content, confidence, sources, conversation_id }
+  2. PublicChatMessageView (AllowAny)
+  3. Load Chatbot by id where is_active=True
+  4. Create/find Conversation in MongoDB (mongoengine)
+  5. Save user Message
+  6. RAGEngine(workspace_id).query() — embed, search, rerank, LLM generate
+  7. Save assistant Message with confidence + sources
+  8. If confidence < 0.6 → auto-create Ticket
+  9. Return JSON: { content, confidence, sources, conversation_id }
+
+
+WHY DJANGO REST FRAMEWORK?
+--------------------------
+  - Mature ecosystem (admin, auth patterns, middleware, CORS packages)
+  - Clear View / Serializer / Permission separation
+  - Easy Celery integration via django.conf settings
+  - Familiar for enterprise Python teams
+  - Still uses MongoDB for flexible SaaS documents (mongoengine ODM)
+  - SQLite only for Django's built-in admin/session tables
 
 
 ================================================================================
@@ -246,7 +256,7 @@ SECTION 5: CORE CONCEPTS & TECHNIQUES USED
 ----------------
    Combines two retrieval methods:
      - Vector search (semantic similarity via Pinecone embeddings)
-     - Keyword search (MongoDB regex on chunk content)
+     - Keyword search (MongoDB / mongoengine content__icontains)
    Better recall than either method alone.
 
 3. QUERY REWRITING
@@ -269,6 +279,7 @@ SECTION 5: CORE CONCEPTS & TECHNIQUES USED
      - Pinecone: separate namespace per workspace (workspace_{id})
      - JWT: workspace_id claim in access token
      - Header: X-Workspace-Id on every authenticated request
+     - require_member() validates membership before workspace operations
 
 6. CHUNKING STRATEGY
 --------------------
@@ -300,6 +311,8 @@ SECTION 5: CORE CONCEPTS & TECHNIQUES USED
      - Website crawling
      - Nightly analytics aggregation
      - Conversation summarization
+   Celery app: celery -A config worker / beat
+   Tasks live in: api/tasks.py
 
 10. ROLE-BASED ACCESS CONTROL (RBAC)
 ------------------------------------
@@ -308,25 +321,30 @@ SECTION 5: CORE CONCEPTS & TECHNIQUES USED
       admin   → all except billing
       agent   → tickets, live chat, analytics view
       viewer  → analytics view only
+    Enforced via DRF permission classes:
+      HasWorkspacePermission(Permission.MANAGE_KNOWLEDGE.value)
 
-11. JWT AUTHENTICATION
-----------------------
-    Stateless auth using JSON Web Tokens:
-      Access token  → 30 minutes (used on every API call)
-      Refresh token → 7 days (used to get new access token)
-    Claims: user_id (sub), workspace_id, role, token type
+11. JWT AUTHENTICATION (Custom for mongoengine Users)
+------------------------------------------------------
+    Django's default User model is NOT used for app users.
+    Custom JWTAuthentication loads mongoengine User by token sub claim.
+    Access token  → 30 minutes
+    Refresh token → 7 days
+    Claims: user_id (sub), workspace_id, role, type (access|refresh)
+    Files: api/jwt_utils.py, api/authentication.py
 
-12. DEPENDENCY INJECTION (FastAPI Depends)
--------------------------------------------
-    Services and repositories injected via FastAPI's Depends():
-      def get_service(tenant: Tenant) -> KnowledgeService:
-          return KnowledgeService(get_database(), tenant.workspace_id)
+12. DRF PERMISSIONS & AUTHENTICATION CLASSES
+---------------------------------------------
+    Instead of FastAPI Depends(), Django uses:
+      authentication_classes = [JWTAuthentication]
+      permission_classes = [IsAuthenticatedJWT, HasWorkspacePermission(...)]
+    Tenant helpers: get_workspace_id(request), require_member(user_id, ws_id)
 
-13. REPOSITORY PATTERN
------------------------
-    All database access goes through repository classes.
-    BaseRepository provides: create, get_by_id, update, delete, list
-    with automatic workspace_id filtering and timestamp management.
+13. MONGOENGINE ODM (Not Django ORM for app data)
+-------------------------------------------------
+    App collections are mongoengine Document classes.
+    Django ORM/SQLite is only for admin, sessions, contenttypes.
+    Connection established in api.apps.ApiConfig.ready().
 
 14. STRATEGY PATTERN (AI Fallbacks)
 ------------------------------------
@@ -334,23 +352,19 @@ SECTION 5: CORE CONCEPTS & TECHNIQUES USED
     VectorStore:   Pinecone → In-memory dict
     Embeddings:    OpenAI → Hash-based deterministic vectors
 
-15. AUDIT LOGGING
------------------
-    Middleware logs all POST/PUT/PATCH/DELETE operations to audit_logs
-    collection with: user_id, workspace_id, action, duration, status code.
+15. CORS & APPEND_SLASH
+-----------------------
+    django-cors-headers for frontend origin whitelist.
+    APPEND_SLASH = False so frontend paths without trailing slash work
+    (e.g. /api/v1/auth/signup).
 
-16. RATE LIMITING
------------------
-    SlowAPI limits public widget chat endpoint to 30 requests/minute per IP
-    to prevent abuse of the unauthenticated public API.
-
-17. GRACEFUL DEGRADATION
+16. GRACEFUL DEGRADATION
 -------------------------
     Platform works without OpenAI/Pinecone API keys:
       - Hash-based embeddings (dev mode)
       - In-memory vector store
       - Demo LLM responses
-    Allows development and demos without paid API keys.
+    Document upload tries Celery first, falls back to sync processing.
 
 
 ================================================================================
@@ -359,989 +373,425 @@ SECTION 6: ALL 21 MODULES — DETAILED BREAKDOWN
 
 MODULE 1: AUTHENTICATION [FULLY IMPLEMENTED]
 ---------------------------------------------
-Files: services/auth_service.py, endpoints/auth.py, core/security.py
+Files: api/views/auth.py, api/jwt_utils.py, api/authentication.py
 Features:
-  - Email/password signup (creates user + workspace + owner membership)
+  - Email/password signup (creates User + Workspace + owner membership)
   - Login with JWT access + refresh tokens
   - Token refresh endpoint
   - Email verification (auto-verify in dev if SMTP not configured)
   - Forgot password + reset password flow
-  - Google OAuth (Authlib + redirect to frontend callback)
+  - Google OAuth stubs (needs GOOGLE_CLIENT_ID)
   - GET /auth/me — returns user profile + all workspaces
-Collections: users, workspace_members
+Models: User, WorkspaceMember
 
 MODULE 2: WORKSPACE MANAGEMENT [FULLY IMPLEMENTED]
 ---------------------------------------------------
-Files: services/workspace_service.py, endpoints/workspaces.py
+Files: api/views/workspaces.py
 Features:
-  - Get/update workspace settings (name, support email, language)
-  - Update branding (logo URL, primary color, company name)
-  - List workspace members
-  - Invite member by email (sends invite email)
-  - Update member role / remove member
-  - Owner cannot be removed or reassigned
-Collection: workspaces
+  - Get/update workspace settings
+  - Update branding
+  - List / invite / update role / remove members
+  - Owner cannot be removed
+Model: Workspace
 
 MODULE 3: KNOWLEDGE BASE [FULLY IMPLEMENTED]
 ---------------------------------------------
-Files: services/knowledge_service.py, endpoints/knowledge.py
+Files: api/views/knowledge.py, api/services/knowledge.py
 Features:
-  - Upload documents: PDF, DOCX, TXT, MD, CSV, HTML
-  - Async processing via Celery (status: pending → processing → indexed)
-  - Knowledge base stats dashboard (docs, pages, tokens, coverage %)
-  - Delete document (removes from S3, Pinecone, MongoDB)
-Collections: documents, document_chunks
+  - Upload PDF, DOCX, TXT, MD, CSV, HTML
+  - Sync or Celery processing (pending → processing → indexed)
+  - Stats dashboard (docs, pages, tokens, coverage %)
+  - Delete document (storage + Pinecone + MongoDB)
+Models: Document, DocumentChunk
 
 MODULE 4: WEBSITE CRAWLER [BASIC IMPLEMENTED]
 ---------------------------------------------
-Files: services/crawler_service.py, utils/crawler.py, workers/crawler_tasks.py
+Files: api/views/crawler.py, core/utils/crawler.py, api/tasks.py
 Features:
-  - Submit URL → Celery crawls with BeautifulSoup (max depth 2, same domain)
-  - Crawled pages fed into same ingestion pipeline as uploads
-  - Scheduled re-sync via Celery Beat (daily at 03:00 UTC)
-  - Manual sync trigger endpoint
-Collection: crawler_jobs
+  - Submit URL → crawl (BeautifulSoup + httpx, depth 2)
+  - Pages ingested via same knowledge pipeline
+  - Celery Beat daily re-sync
+Model: CrawlerJob
 
 MODULE 5: RAG ENGINE [FULLY IMPLEMENTED]
 -----------------------------------------
-Files: ai/rag_engine.py, ai/embeddings.py, ai/vector_store.py, ai/llm_client.py
+Files: core/ai/rag_engine.py, embeddings.py, vector_store.py, llm_client.py
 Features:
-  - Full query pipeline (see Section 7)
+  - Sync query pipeline (Django-friendly)
   - Hybrid vector + keyword search
-  - Query rewriting with conversation history
-  - Confidence scoring + auto-escalation
-  - Redis caching (1 hour TTL)
-  - Streaming responses (SSE via query_stream)
-  - Source attribution with document/page references
-  - LLM fallback chain: OpenAI → Claude → Demo mode
+  - Query rewriting, confidence scoring, Redis cache
+  - Source attribution
+  - LLM fallback: OpenAI → Claude → demo
 
 MODULE 6: AI CHATBOT BUILDER [FULLY IMPLEMENTED]
 -------------------------------------------------
-Files: services/chatbot_service.py, endpoints/chatbots.py
+Files: api/views/chatbots.py
 Features:
   - CRUD chatbots per workspace
-  - Customization: name, welcome message, primary color, theme,
-    language, tone, personality, avatar URL
-  - Link to specific document subset
-  - Active/inactive toggle
-Collection: chatbots
+  - Customization: name, welcome message, color, theme, tone, personality
+Model: Chatbot
 
 MODULE 7: CHAT WIDGET [IMPLEMENTED — PARTIAL]
 ----------------------------------------------
-Files: widget/src/widget.ts
+Files: widget/src/widget.ts + public chat views
 Features:
-  - Standalone Vite-built IIFE JavaScript bundle
-  - Floating chat button, chat window
-  - Conversation history (localStorage + server sync)
-  - Typing indicator, thumbs up/down feedback
-  - Human escalation button
-  - Mobile responsive
-Embed code:
-  <script src="https://your-domain.com/widget.js" data-chatbot-id="xxx"></script>
-Public API: POST /api/v1/public/chat/{id}/message (no auth, rate-limited)
+  - Embeddable IIFE script
+  - Floating button, history, thumbs feedback, escalation
+Public API: /api/v1/public/chat/{id}/message (no auth)
 
 MODULE 8: LIVE CHAT [PARTIAL]
 ------------------------------
-Files: endpoints/websocket.py, services/conversation_service.py
+Files: api/views/chat.py (conversations list/assign)
 Features:
-  - WebSocket at /ws/conversations/{id}
-  - Real-time: typing status, seen status, agent messages
-  - Agent assignment API
-  - Conversation list for agents
-Not yet: online status, conversation transfer UI, internal notes
+  - Agent conversation list, detail, assign
+  - Channels package available for WebSockets (optional)
 
 MODULE 9: SUPPORT TICKETS [FULLY IMPLEMENTED]
 ----------------------------------------------
-Files: services/ticket_service.py, endpoints/tickets.py
+Files: api/views/tickets.py
 Features:
-  - CRUD tickets with categories, priorities, statuses
-  - Ticket comments (internal notes supported via is_internal flag)
-  - Status workflow: open → pending → resolved → closed
-  - Agent assignment
-  - Link to originating conversation
-Collections: tickets, ticket_comments
+  - CRUD tickets, comments, priorities, statuses
+Models: Ticket, TicketComment
 
 MODULE 10: AI TICKET GENERATION [FULLY IMPLEMENTED]
 ----------------------------------------------------
-Files: services/ticket_service.py (auto_create_from_conversation)
-Trigger: RAG confidence < 0.6 OR user clicks "Talk to human agent"
-AI generates:
-  - Ticket title
-  - Conversation summary
-  - Detected customer intent
-  - Suggested resolution steps
-  - Priority level (low/medium/high/critical)
-  - Category (technical/billing/refund/feature_request/bug_report)
+Trigger: RAG confidence < 0.6 OR escalate button
+Creates ticket with AI summary / intent / priority / category
 
 MODULE 11: SEMANTIC SEARCH [PARTIAL]
 -------------------------------------
-Files: services/search_service.py, endpoints/search.py
-Features:
-  - Vector search across document chunks
-  - Keyword search fallback
-  - Ticket title/description keyword match
-Not yet: search across conversations and FAQs
+Files: api/views/search.py
+Vector + keyword on documents; ticket keyword match
 
 MODULE 12: CONVERSATION MEMORY [PARTIAL]
 -----------------------------------------
-Files: services/conversation_service.py, ai/rag_engine.py
-Short-term: Last 6 messages injected into RAG prompt context
-Long-term: Conversation summarization via Celery task after session ends
-Customer history: get_customer_history() method (no public API yet)
+Short-term: last N messages in RAG prompt
+Long-term: summarize_conversation Celery task
 
 MODULE 13: ANALYTICS DASHBOARD [IMPLEMENTED]
 ---------------------------------------------
-Files: services/analytics_service.py, frontend dashboard/analytics
-Metrics tracked:
-  - Total / resolved / escalated conversations
-  - Average response time
-  - CSAT score
-  - Ticket volume
-  - Chatbot accuracy (avg confidence)
-  - Top 10 most asked questions
-  - Confidence trend over time
-Nightly aggregation via Celery Beat at 02:00 UTC
-Collection: analytics
+Files: api/views/analytics.py, api/tasks.aggregate_daily_analytics
+Metrics: conversations, CSAT, tickets, accuracy trends
 
 MODULE 14: CUSTOMER FEEDBACK [IMPLEMENTED]
 -------------------------------------------
-Files: services/feedback_service.py
-Features:
-  - Thumbs up/down after each bot response
-  - Star rating (1-5)
-  - Optional comment
-  - CSAT score calculation (% of ratings >= 4)
-Collection: feedback
+Thumbs / ratings via public feedback endpoint
+Model: Feedback
 
 MODULE 15: AI ADMIN ASSISTANT [BASIC]
 --------------------------------------
-Files: services/admin_assistant_service.py, endpoints/admin_assistant.py
-Admin can ask natural language questions about analytics data.
-LLM answers using current analytics overview as context.
-Restricted to owner/admin roles.
+Files: api/views/admin_assistant.py
+Owner/admin natural-language queries over analytics
 
-MODULE 16: VOICE CHATBOT [STUB — 501]
----------------------------------------
-Files: services/voice_service.py, endpoints/voice.py
-Planned: Whisper STT + OpenAI TTS
-Currently returns HTTP 501 Not Implemented
-
-MODULE 17: WHATSAPP INTEGRATION [STUB]
----------------------------------------
-Files: services/integration_service.py
-Webhook endpoint exists but returns 501
-Planned: Meta Business API message routing
-
-MODULE 18: SLACK INTEGRATION [STUB]
-------------------------------------
-Same integration service pattern as WhatsApp
-Planned: Slack Events API for ticket notifications
-
-MODULE 19: EMAIL SUPPORT [PARTIAL]
------------------------------------
-Files: utils/email_service.py
-Implemented: SMTP for auth emails (verification, password reset, invites)
-Not implemented: IMAP inbox monitoring, ticket-from-email, AI draft replies
-
-MODULE 20: API PLATFORM [PARTIAL]
-----------------------------------
-Files: services/api_platform_service.py, endpoints/api_keys.py
-Implemented:
-  - Create API key (shown once, stored as SHA-256 hash)
-  - List keys (prefix only, never full key)
-  - Revoke key
-Not implemented: API key auth middleware on routes, usage tracking
-
-MODULE 21: SUBSCRIPTION BILLING [PARTIAL]
-------------------------------------------
-Files: services/billing_service.py, endpoints/billing.py
-Implemented:
-  - Plan limits definition (Free/Starter/Professional/Enterprise)
-  - Read current subscription
-Not implemented: Stripe Checkout, webhooks (returns 501)
-Collection: subscriptions
+MODULE 16: VOICE [STUB — 501]
+MODULE 17–18: WHATSAPP / SLACK [STUB]
+MODULE 19: EMAIL [PARTIAL — SMTP for auth emails]
+MODULE 20: API PLATFORM [PARTIAL — key create/list/revoke]
+MODULE 21: BILLING [PARTIAL — plan read; Stripe checkout 501]
 
 
 ================================================================================
 SECTION 7: RAG PIPELINE — DEEP DIVE
 ================================================================================
 
-DOCUMENT INGESTION PIPELINE
-----------------------------
+DOCUMENT INGESTION
+------------------
+  Upload (DRF multipart) → StorageService (S3/local)
+  → Document(status=pending)
+  → Celery process_document OR sync fallback
+  → extract_document → split_text → EmbeddingService
+  → VectorStore.upsert (Pinecone namespace) + DocumentChunk
+  → Document(status=indexed)
 
-  Step 1: UPLOAD
-    User uploads file via dashboard or API
-    POST /api/v1/knowledge/documents/upload
-    Allowed: .pdf .docx .doc .txt .md .csv .html .htm
+QUERY PIPELINE
+--------------
+  Cache (Redis) → Query rewrite → Embed query
+  → Pinecone top 20 + mongoengine keyword top 5
+  → Rerank/dedupe top 5 → Build context
+  → LLM generate → Confidence score
+  → Escalate if < 0.6 → Return + cache
 
-  Step 2: STORE
-    File saved to AWS S3 or local ./uploads directory
-    MongoDB document record created with status: "pending"
-
-  Step 3: QUEUE (Celery)
-    process_document.delay(document_id, workspace_id)
-    API returns immediately — processing happens in background
-
-  Step 4: EXTRACT TEXT
-    PDF    → PyPDF + PDFPlumber fallback
-    DOCX   → python-docx
-    HTML   → BeautifulSoup (removes nav/footer/script tags)
-    TXT/MD → direct UTF-8 decode
-    Text cleaned: whitespace normalized, excessive newlines removed
-
-  Step 5: CHUNK
-    LangChain RecursiveCharacterTextSplitter
-    chunk_size=800, chunk_overlap=150
-    Each chunk gets: chunk_id, page_number, source, token_count
-
-  Step 6: EMBED
-    OpenAI text-embedding-3-small → 1536-dim vector per chunk
-    Fallback: SHA-256 hash → deterministic pseudo-vector (dev mode)
-
-  Step 7: STORE VECTORS
-    Pinecone upsert in namespace: workspace_{workspace_id}
-    Metadata: content (first 1000 chars), document_id, page_number, source
-
-  Step 8: STORE METADATA
-    MongoDB document_chunks collection
-    Document status updated to: "indexed"
-
-
-QUERY / ANSWER PIPELINE
-------------------------
-
-  Step 1: CACHE CHECK
-    Redis key: rag:{md5(workspace_id + question)}
-    TTL: 3600 seconds (1 hour)
-    Return cached result if hit
-
-  Step 2: QUERY REWRITING
-    If conversation history exists:
-      LLM rewrites follow-up into standalone search query
-    Example: "What about refunds?" → "What is the refund policy?"
-
-  Step 3: EMBED QUERY
-    Same embedding model as ingestion
-    Query → 1536-dim vector
-
-  Step 4: VECTOR SEARCH
-    Pinecone query: top 20 results (RAG_TOP_K=20)
-    Filtered by workspace namespace
-
-  Step 5: KEYWORD SEARCH
-    MongoDB regex search on document_chunks.content
-    Top 5 additional results (score: 0.5 fixed)
-
-  Step 6: RERANK & DEDUPLICATE
-    Sort all results by score descending
-    Remove duplicate content (first 100 chars match)
-    Keep top 5 (RAG_RERANK_TOP_K=5)
-
-  Step 7: BUILD CONTEXT WINDOW
-    Format: [Source N: filename, page X]\n{chunk content}
-    All 5 chunks joined with --- separators
-    Injected into SUPPORT_SYSTEM_PROMPT
-
-  Step 8: LLM GENERATION
-    System prompt: company name, tone, personality, context, rules
-    Messages: system + last 6 history messages + user question
-    Model: GPT-4o (primary) → Claude (fallback) → demo message
-
-  Step 9: CONFIDENCE SCORING
-    Signal 1: Average retrieval similarity score
-    Signal 2: LLM self-rating (0.0–1.0)
-    Final confidence = max(LLM score, avg retrieval score)
-
-  Step 10: AUTO-ESCALATION
-    If confidence < CONFIDENCE_THRESHOLD (0.6):
-      - Conversation status → "escalated"
-      - TicketService.auto_create_from_conversation()
-      - AI generates ticket title, summary, intent, priority
-
-  Step 11: RETURN & CACHE
-    Response: { content, confidence, sources[], should_escalate }
-    Cache result in Redis for 1 hour
-
-
-PROMPT TEMPLATE (SUPPORT_SYSTEM_PROMPT)
-----------------------------------------
-Rules enforced in prompt:
-  - Answer ONLY from provided context
-  - Say "I don't know" if context insufficient
-  - Always cite sources
-  - Never hallucinate
-  - Suggest human agent for billing/account issues
+Key file: backend/core/ai/rag_engine.py
 
 
 ================================================================================
 SECTION 8: MULTI-TENANT ARCHITECTURE
 ================================================================================
 
-WHAT IS MULTI-TENANCY?
------------------------
-One application instance serves thousands of companies (tenants).
-Each company's data must be completely isolated from others.
-
-HOW ISOLATION IS ENFORCED (3 LAYERS)
-------------------------------------
-
-  Layer 1 — REQUEST CONTEXT
-    Every authenticated request carries workspace_id via:
-      - JWT claim: workspace_id in access token
-      - HTTP header: X-Workspace-Id
-    get_tenant_context() in deps.py validates:
-      - User is authenticated
-      - User is a member of the requested workspace
-    Result: TenantContext(workspace_id, user_id, role) on request.state
-
-  Layer 2 — REPOSITORY FILTER
-    BaseRepository._base_filter() automatically adds:
-      { "workspace_id": self.workspace_id }
-    to every MongoDB query when repository is workspace-scoped.
-    No unscoped reads possible through repository layer.
-
-  Layer 3 — VECTOR NAMESPACE
-    Pinecone namespace: workspace_{workspace_id}
-    Vectors from Company A can never appear in Company B's search results.
-
-DATA MODEL
-----------
-  users            → global (no workspace_id)
-  workspaces       → one per company
-  workspace_members → links users to workspaces with roles
-  ALL other collections → have workspace_id field
-
-
-================================================================================
-SECTION 9: AUTHENTICATION & AUTHORIZATION
-================================================================================
-
-SIGNUP FLOW
------------
-  1. POST /auth/signup { email, password, full_name, workspace_name }
-  2. Create user document (password hashed with bcrypt)
-  3. Create workspace document (auto-generated slug)
-  4. Create workspace_member (role: owner)
-  5. Send verification email (or auto-verify if no SMTP)
-  6. Return JWT access + refresh tokens
-
-LOGIN FLOW
-----------
-  1. POST /auth/login { email, password }
-  2. Verify bcrypt password hash
-  3. Find user's workspace memberships
-  4. Generate tokens with workspace_id + role claims
-  5. Return tokens
-
-TOKEN REFRESH FLOW
+3 ISOLATION LAYERS
 ------------------
-  1. Access token expires (30 min)
-  2. Frontend Axios interceptor catches 401
-  3. POST /auth/refresh { refresh_token }
-  4. New access + refresh tokens issued
-  5. Original request retried automatically
+  1. Request: X-Workspace-Id header / JWT workspace_id claim
+     helpers in api/authentication.py (get_workspace_id, require_member)
+  2. Query: views filter mongoengine queries by workspace_id
+  3. Vectors: Pinecone namespace workspace_{workspace_id}
 
-GOOGLE OAUTH FLOW
------------------
-  1. GET /auth/google/login → redirect to Google
-  2. User authenticates with Google
-  3. GET /auth/google/callback → Authlib processes token
-  4. handle_oauth_user() — create or find user
-  5. Redirect to frontend: /auth/callback?access_token=...&refresh_token=...
-  6. Frontend stores tokens, calls /auth/me, redirects to dashboard
-
-RBAC — ROLES & PERMISSIONS
----------------------------
-
-  ROLE      PERMISSIONS
-  ------    -----------
-  owner     ALL (9 permissions)
-  admin     All except MANAGE_BILLING
-  agent     MANAGE_TICKETS, VIEW_ANALYTICS, LIVE_CHAT
-  viewer    VIEW_ANALYTICS only
-
-  PERMISSIONS LIST:
-    MANAGE_WORKSPACE      — update workspace settings/branding
-    MANAGE_MEMBERS        — invite, update role, remove members
-    MANAGE_KNOWLEDGE      — upload/delete documents, crawler
-    MANAGE_CHATBOTS       — create/edit/delete chatbots
-    MANAGE_TICKETS        — full ticket management
-    VIEW_ANALYTICS        — view dashboard metrics
-    MANAGE_BILLING        — subscription management
-    MANAGE_INTEGRATIONS   — connect WhatsApp/Slack/Email
-    LIVE_CHAT             — access live chat agent interface
-
-  ENFORCEMENT:
-    require_permission(Permission.MANAGE_KNOWLEDGE) on endpoint
-    require_roles(UserRole.OWNER, UserRole.ADMIN) for admin assistant
+Users are global; WorkspaceMember links users to workspaces with roles.
 
 
 ================================================================================
-SECTION 10: DATABASE SCHEMA (MongoDB)
+SECTION 9: AUTHENTICATION & AUTHORIZATION (DJANGO STYLE)
 ================================================================================
 
-Database name: support_ai
-Driver: Motor (async)
-Indexes created automatically on app startup (database.py lifespan)
+SIGNUP
+  POST /api/v1/auth/signup
+  → User + Workspace + WorkspaceMember(owner) + JWT tokens
 
-COLLECTION: users
-  email (unique), password_hash, full_name, is_verified,
-  oauth_provider, verification_token, reset_token, reset_token_expires,
-  created_at, updated_at
+LOGIN
+  POST /api/v1/auth/login
+  → bcrypt verify → JWT with workspace_id + role
 
-COLLECTION: workspaces
-  name, slug (unique), branding{}, settings{}, plan (free/starter/pro/enterprise),
-  created_at, updated_at
+PROTECTED ROUTES
+  Authorization: Bearer <access_token>
+  X-Workspace-Id: <workspace_id>
+  JWTAuthentication sets request.user = UserProxy
+  HasWorkspacePermission checks ROLE_PERMISSIONS from core/enums.py
 
-COLLECTION: workspace_members
-  workspace_id, user_id, role (owner/admin/agent/viewer)
-  Index: (workspace_id + user_id) unique
+RBAC ROLES
+  owner, admin, agent, viewer
+PERMISSIONS
+  manage_workspace, manage_members, manage_knowledge, manage_chatbots,
+  manage_tickets, view_analytics, manage_billing, manage_integrations, live_chat
 
-COLLECTION: documents
-  workspace_id, filename, file_type, s3_key, status (pending/processing/indexed/failed),
-  token_count, page_count, chunk_count, source (upload/crawler), file_size, error
 
-COLLECTION: document_chunks
-  workspace_id, document_id, chunk_id, content, page_number, source,
-  token_count, embedding_model
+================================================================================
+SECTION 10: DATABASE SCHEMA (MongoDB via mongoengine)
+================================================================================
 
-COLLECTION: chatbots
-  workspace_id, name, welcome_message, primary_color, theme, language,
-  tone, personality, avatar_url, document_ids[], is_active
+Connected in: api.apps.ApiConfig.ready()
+Database name: support_ai (from MONGODB_DB_NAME)
 
-COLLECTION: conversations
-  workspace_id, chatbot_id, customer_id, status (active/escalated/resolved/closed),
-  message_count, last_message_at, last_confidence, assigned_agent_id, summary
+Models in api/models.py:
+  User, Workspace, WorkspaceMember, Document, DocumentChunk,
+  Chatbot, Conversation, Message, Ticket, TicketComment, Feedback,
+  Analytics, Subscription, ApiKey, CrawlerJob, Integration,
+  AuditLog, Notification
 
-COLLECTION: messages
-  conversation_id, workspace_id, role (user/assistant/agent/system),
-  content, confidence, sources[], author_id, created_at
+serialize_doc(doc) → dict with string id for JSON responses.
 
-COLLECTION: tickets
-  workspace_id, title, description, category, priority, status,
-  conversation_id, ai_summary, detected_intent, suggested_resolution,
-  auto_generated, confidence_at_escalation, assigned_agent_id, created_by
-
-COLLECTION: ticket_comments
-  ticket_id, workspace_id, author_id, content, is_internal, created_at
-
-COLLECTION: feedback
-  workspace_id, message_id, rating (1-5), comment, thumbs (up/down)
-
-COLLECTION: analytics
-  workspace_id, date (YYYY-MM-DD), metrics{} — unique per workspace+date
-
-COLLECTION: subscriptions
-  workspace_id (unique), plan, stripe_customer_id, usage{}
-
-COLLECTION: api_keys
-  workspace_id, name, key_hash (SHA-256, unique), key_prefix, permissions[], rate_limit
-
-COLLECTION: crawler_jobs
-  workspace_id, url, schedule, max_depth, status, pages_crawled, last_sync, error
-
-COLLECTION: integrations
-  workspace_id, type (whatsapp/slack/email), config{}, is_active
-
-COLLECTION: audit_logs
-  workspace_id, user_id, action, resource, method, status_code, duration_ms, timestamp
-
-PINECONE INDEX: support-kb
-  Dimension: 1536 | Metric: cosine | Namespace: workspace_{id} per tenant
+Pinecone index: support-kb, dim 1536, cosine, namespace per workspace.
 
 
 ================================================================================
 SECTION 11: API ENDPOINTS REFERENCE
 ================================================================================
 
-Base URL: http://localhost:8001/api/v1  (or :8000 in Docker)
-Docs:     http://localhost:8001/docs
+Base: http://localhost:8001/api/v1/
+Health: http://localhost:8001/health
+Admin: http://localhost:8001/admin/
 
-AUTH (no workspace header needed)
-  POST   /auth/signup
-  POST   /auth/login
-  POST   /auth/refresh
-  POST   /auth/verify-email
-  POST   /auth/forgot-password
-  POST   /auth/reset-password
-  GET    /auth/me                    [Bearer token required]
-  GET    /auth/google/login
-  GET    /auth/google/callback
+AUTH
+  POST auth/signup | auth/login | auth/refresh
+  POST auth/verify-email | auth/forgot-password | auth/reset-password
+  GET  auth/me | auth/google/login | auth/google/callback
 
-WORKSPACES [Bearer + X-Workspace-Id]
-  GET    /workspaces/current
-  PATCH  /workspaces/current
-  PATCH  /workspaces/current/branding
-  GET    /workspaces/current/members
-  POST   /workspaces/current/members
-  PATCH  /workspaces/current/members/{user_id}
-  DELETE /workspaces/current/members/{user_id}
+WORKSPACES
+  GET/PATCH workspaces/current
+  PATCH workspaces/current/branding
+  GET/POST workspaces/current/members
+  PATCH/DELETE workspaces/current/members/<user_id>
 
-KNOWLEDGE BASE [MANAGE_KNOWLEDGE permission]
-  POST   /knowledge/documents/upload  (multipart file)
-  GET    /knowledge/documents
-  DELETE /knowledge/documents/{id}
-  GET    /knowledge/stats
+KNOWLEDGE
+  POST knowledge/documents/upload
+  GET  knowledge/documents
+  DELETE knowledge/documents/<id>
+  GET  knowledge/stats
 
-CRAWLER [MANAGE_KNOWLEDGE]
-  POST   /crawler/jobs
-  GET    /crawler/jobs
-  POST   /crawler/jobs/{id}/sync
-
-CHATBOTS [MANAGE_CHATBOTS]
-  POST   /chatbots
-  GET    /chatbots
-  GET    /chatbots/{id}
-  PATCH  /chatbots/{id}
-  DELETE /chatbots/{id}
-
-PUBLIC CHAT [no auth — rate limited 30/min]
-  GET    /public/chat/{chatbot_id}/config
-  POST   /public/chat/{chatbot_id}/message
-  POST   /public/chat/{chatbot_id}/escalate
-  POST   /public/chat/feedback
-
-AGENT CHAT [LIVE_CHAT permission]
-  GET    /chat/conversations
-  GET    /chat/conversations/{id}
-  POST   /chat/conversations/{id}/assign
-
-TICKETS [MANAGE_TICKETS]
-  POST   /tickets
-  GET    /tickets
-  GET    /tickets/{id}
-  PATCH  /tickets/{id}
-  POST   /tickets/{id}/comments
-  GET    /tickets/{id}/comments
-
-ANALYTICS [VIEW_ANALYTICS]
-  GET    /analytics/overview
-  GET    /analytics/historical?start_date=&end_date=
-  GET    /analytics/csat
-
-SEARCH [MANAGE_KNOWLEDGE]
-  GET    /search?q=
-
-INTEGRATIONS [MANAGE_INTEGRATIONS]
-  GET    /integrations
-  POST   /integrations/{type}/connect
-  DELETE /integrations/{id}
-
-BILLING [MANAGE_BILLING]
-  GET    /billing/subscription
-  POST   /billing/checkout
-
-API KEYS [MANAGE_WORKSPACE]
-  POST   /api-keys
-  GET    /api-keys
-  DELETE /api-keys/{id}
-
-ADMIN ASSISTANT [owner/admin only]
-  POST   /admin-assistant/query
-
-VOICE [stub — 501]
-  POST   /voice/stt
-  POST   /voice/tts
-
-WEBSOCKET
-  WS     /ws/conversations/{id}
-
-SYSTEM
-  GET    /health
-  GET    /metrics  (Prometheus)
-  GET    /docs     (Swagger UI)
+CRAWLER / CHATBOTS / PUBLIC CHAT / TICKETS / ANALYTICS / SEARCH /
+INTEGRATIONS / BILLING / API-KEYS / ADMIN-ASSISTANT / VOICE
+  — same path layout as before; see api/urls.py
 
 
 ================================================================================
 SECTION 12: FRONTEND ARCHITECTURE
 ================================================================================
 
-PAGES (Next.js 15 App Router)
-------------------------------
-  /                          Landing page (marketing)
-  /features                  Features showcase
-  /pricing                   Pricing tiers
-  /login                     Login form (split-screen auth layout)
-  /signup                    Registration form
-  /forgot-password           Password reset request
-  /auth/callback             Google OAuth token handler
-  /dashboard                 Overview metrics (4 KPI cards)
-  /dashboard/knowledge-base  Document upload + list + stats
-  /dashboard/sources         Website crawler management
-  /dashboard/chatbots        Chatbot builder + embed code
-  /dashboard/live-chat       Active conversations list
-  /dashboard/tickets         Ticket list with status badges
-  /dashboard/analytics       Recharts line + bar charts
-  /dashboard/integrations    Coming soon cards
-  /dashboard/billing         Static pricing cards
-  /dashboard/settings        Workspace settings form
-
-STATE MANAGEMENT
-----------------
-  Zustand (auth-store.ts):
-    - user, workspaces, currentWorkspace
-    - Persisted to localStorage
-    - Tokens stored in localStorage (access_token, refresh_token, workspace_id)
-
-  TanStack React Query (app-providers.tsx):
-    - Server state for all API data
-    - 30 second stale time
-    - Automatic refetch on window focus
-
-  Axios (lib/api.ts):
-    - Base URL from NEXT_PUBLIC_API_URL env var
-    - Request interceptor: adds Authorization + X-Workspace-Id headers
-    - Response interceptor: auto-refresh on 401, redirect to /login on failure
-
-UI DESIGN SYSTEM
-----------------
-  Color scheme: Emerald teal primary (#10b981) + cyan accent
-  Font: Plus Jakarta Sans
-  Components: Shadcn UI (Button, Card, Input, Badge, Label)
-  Dark sidebar for dashboard navigation
-  Glass morphism on marketing navbar
-  Gradient brand utilities (teal → cyan)
-  Dark/light mode via next-themes
-
-DASHBOARD AUTH GUARD
---------------------
-  dashboard/layout.tsx:
-    1. Check localStorage for access_token
-    2. If missing → redirect to /login
-    3. If no user in Zustand → call /auth/me to hydrate state
-    4. Show loading spinner while checking
+Unchanged by Django migration.
+Next.js 15 App Router, Zustand auth, React Query, Axios with refresh interceptor.
+NEXT_PUBLIC_API_URL points to Django, e.g. http://localhost:8001/api/v1
 
 
 ================================================================================
 SECTION 13: BACKGROUND JOBS (CELERY)
 ================================================================================
 
-CELERY CONFIGURATION
-  Broker:     redis://localhost:6379/1
-  Backend:    redis://localhost:6379/2
-  App name:   support_ai
-  Serializer: JSON
+Start:
+  celery -A config worker --loglevel=info
+  celery -A config beat --loglevel=info
 
-TASKS
------
+Tasks (api/tasks.py):
   process_document(document_id, workspace_id)
-    Trigger: On document upload
-    Action:  Full ingestion pipeline (extract → chunk → embed → store)
-    Retries: Max 3, 60 second countdown
-    File:    workers/ingestion_tasks.py
-
   crawl_website(job_id, workspace_id)
-    Trigger: Manual sync or scheduled
-    Action:  BeautifulSoup crawl → ingest each page
-    Retries: Max 2, 120 second countdown
-    File:    workers/crawler_tasks.py
-
-  aggregate_daily_analytics()
-    Trigger: Celery Beat — daily at 02:00 UTC
-    Action:  Compute metrics snapshot per workspace for yesterday
-    File:    workers/analytics_tasks.py
-
-  sync_scheduled_crawlers()
-    Trigger: Celery Beat — daily at 03:00 UTC
-    Action:  Re-run all non-running crawler jobs
-    File:    workers/crawler_tasks.py
-
+  aggregate_daily_analytics()          # Beat 02:00 UTC
+  sync_scheduled_crawlers()            # Beat 03:00 UTC
   summarize_conversation(conversation_id, workspace_id)
-    Trigger: Manual / post-session (not scheduled)
-    Action:  LLM generates 2-3 sentence conversation summary
-    File:    workers/analytics_tasks.py
+
+If Celery broker is down, knowledge/crawler views fall back to sync processing.
 
 
 ================================================================================
-SECTION 14: DOCKER & DEVOPS
+SECTION 14: DOCKER & HOW TO RUN
 ================================================================================
 
-DOCKER COMPOSE SERVICES (infrastructure/docker-compose.yml)
-------------------------------------------------------------
-  mongodb        Port 27017   Primary database (volume: mongodb_data)
-  redis          Port 6379    Cache + Celery broker
-  backend        Port 8000    FastAPI (uvicorn)
-  celery-worker  —            Background task processor
-  celery-beat    —            Scheduled task scheduler
-  frontend       Port 3000    Next.js dashboard
-  nginx          Port 80      Reverse proxy
-  prometheus     Port 9090    Metrics collection
-  grafana        Port 3001    Dashboards (admin/admin)
+Docker Compose services:
+  mongodb, redis, backend (gunicorn config.wsgi), celery-worker,
+  celery-beat, frontend, nginx, prometheus, grafana
 
-NGINX ROUTING
-  /api/     → backend:8000
-  /ws/      → backend:8000 (WebSocket upgrade)
-  /docs     → backend:8000
-  /health   → backend:8000
-  /metrics  → backend:8000
-  /         → frontend:3000
+Local development:
+  # Terminal 1 — MongoDB must be running
+  cd backend
+  pip install -r requirements.txt
+  python manage.py migrate
+  python manage.py runserver 0.0.0.0:8001
 
-CI/CD PIPELINE (.github/workflows/ci.yml)
-  Job 1: backend-test   — Python 3.12, pytest, ruff lint
-  Job 2: frontend-build — Node 20, npm ci, npm run build
-  Job 3: widget-build   — Vite build
-  Job 4: docker-build   — docker compose build (main branch only)
-  Job 5: e2e              — Playwright smoke tests (main branch)
+  # Terminal 2
+  cd frontend
+  set NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1
+  npm run dev -- --port 3002
 
-HOW TO RUN LOCALLY
-------------------
-  Prerequisites: Python 3.12, Node 20, MongoDB running on 27017
-
-  Backend:
-    cd backend
-    pip install -r requirements.txt
-    python -m uvicorn app.main:app --reload --port 8001
-
-  Frontend:
-    cd frontend
-    npm install
-    set NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1
-    npx next dev --port 3002
-
-  Access:
-    Dashboard:  http://localhost:3002
-    API Docs:   http://localhost:8001/docs
-    Health:     http://localhost:8001/health
+Access:
+  Dashboard  http://localhost:3002
+  API        http://localhost:8001/api/v1/
+  Health     http://localhost:8001/health
 
 
 ================================================================================
 SECTION 15: SECURITY FEATURES
 ================================================================================
 
-  JWT Authentication        Access (30min) + Refresh (7 days) tokens
-  bcrypt Password Hashing   passlib with bcrypt, never store plain passwords
-  RBAC                      4 roles, 9 granular permissions
-  Tenant Isolation          workspace_id on all data + Pinecone namespaces
-  Rate Limiting             30 req/min on public chat endpoint (SlowAPI)
-  Audit Logging             All mutations logged to audit_logs collection
-  Email Verification        Required before accessing protected routes
-  CORS Whitelist            Configurable allowed origins
-  OAuth State               SessionMiddleware for Google OAuth CSRF protection
-  API Key Hashing           SHA-256 stored, raw key shown only once at creation
-  File Upload Validation    Extension whitelist, 20MB nginx limit
-  S3 Presigned URLs         No direct bucket access for downloads
-  Prometheus Metrics        /metrics endpoint for monitoring
-  Input Validation          Pydantic schemas on all API inputs
+  Custom JWT for mongoengine users
+  bcrypt password hashing
+  RBAC via DRF permission classes
+  Tenant isolation (header + queries + Pinecone namespaces)
+  CORS whitelist (django-cors-headers)
+  Email verification gate (is_verified)
+  API key SHA-256 hashing
+  File extension whitelist on uploads
+  S3 presigned URLs / local storage abstraction
+  APPEND_SLASH=False for API path compatibility
 
-NOT YET IMPLEMENTED:
-  API key auth middleware on protected routes
-  CSRF tokens on form mutations
-  XSS sanitization layer
-  Secrets management (uses .env file)
+Gaps / stubs:
+  Stripe checkout, voice, WhatsApp/Slack webhooks, API-key route middleware
 
 
 ================================================================================
 SECTION 16: TESTING
 ================================================================================
 
-BACKEND TESTS (pytest)
-  tests/unit/test_security.py         — JWT, password hashing
-  tests/unit/test_chunking.py         — text splitting, token estimation
-  tests/unit/test_document_processor.py — text extraction, cleaning
-  tests/integration/test_health.py    — /health and / endpoints
+BACKEND (pytest-django)
+  tests/unit/test_security.py      — JWT + bcrypt
+  tests/unit/test_chunking.py      — text split / tokens
+  tests/test_django_health.py      — /health and /api/v1/
   Run: cd backend && pytest tests/ -v
+  Env: DJANGO_SETTINGS_MODULE=config.settings
 
-FRONTEND TESTS
-  Jest: src/__tests__/utils.test.ts   — cn() utility function
-  Playwright E2E: e2e/landing.spec.ts — landing page, signup/login navigation
-  Run: cd frontend && npm test
+FRONTEND
+  Jest utils test; Playwright landing smoke tests
 
 
 ================================================================================
 SECTION 17: DESIGN PATTERNS USED
 ================================================================================
 
-PATTERN                  WHERE USED                        WHY
------------------------  --------------------------------  ---------------------------
-Repository Pattern       repositories/*.py                 Isolate DB logic from business
-Service Layer            services/*.py                     Business rules separate from HTTP
-Dependency Injection     core/deps.py, endpoint Depends()  Testable, loosely coupled
-DTO / Schema Pattern     schemas/*.py                      API contracts ≠ DB documents
-Strategy Pattern         ai/llm_client.py, vector_store.py Provider fallback chains
-Middleware Pipeline      main.py                           Cross-cutting concerns
-Factory Pattern          get_service(tenant) closures      Inject workspace_id into services
-Async Task Queue         Celery workers                    Non-blocking long operations
-Multi-tenant Context     TenantContext + request.state     Thread-safe tenant isolation
-Prompt Engineering       ai/prompts/support.py             Consistent, safe LLM behavior
+PATTERN                     WHERE USED                         WHY
+--------------------------  ---------------------------------  ----------------------
+MVC / DRF View layer        api/views/*.py                     HTTP concerns isolated
+Serializer (DTO)            api/serializers.py                 Validate API input
+ODM Document models         api/models.py (mongoengine)        Flexible SaaS schema
+Custom Authentication       api/authentication.py              JWT for non-Django User
+Permission classes          api/permissions.py                 RBAC enforcement
+Service helpers             api/services/knowledge.py          Reusable ingestion logic
+Strategy / fallbacks        core/ai/*                          OpenAI→Claude→demo
+Async task queue            api/tasks.py + Celery              Non-blocking jobs
+Multi-tenant context        get_workspace_id / require_member  Data isolation
+Prompt engineering          core/ai/prompts/support.py         Safer LLM answers
 
 
 ================================================================================
 SECTION 18: INTERVIEW QUESTIONS & ANSWERS
 ================================================================================
 
-Q1: What is this project and what problem does it solve?
-A:  SupportAI is a multi-tenant SaaS platform that lets companies build
-    AI customer support chatbots trained on their own documents and websites.
-    It solves the problem of companies repeatedly answering the same support
-    questions by using RAG to retrieve company-specific information before
-    generating AI responses, reducing support workload by up to 70%.
+Q1: What is this project?
+A:  SupportAI — multi-tenant SaaS for AI support chatbots trained on a
+    company's docs/website via RAG, with ticket auto-escalation and analytics.
 
-Q2: Why did you choose RAG instead of fine-tuning an LLM?
-A:  RAG is better for this use case because:
-    (1) Knowledge updates instantly when documents change — no retraining
-    (2) Source citations are possible — reduces hallucination risk
-    (3) Lower cost — no GPU training required
-    (4) Works with proprietary data without exposing it to model training
-    (5) Each tenant has isolated knowledge — fine-tuning can't do that easily
+Q2: Why RAG instead of fine-tuning?
+A:  Instant knowledge updates, citations, lower cost, private data, per-tenant
+    isolation without retraining models.
 
-Q3: Explain the RAG pipeline step by step.
-A:  Ingestion: Upload → S3 → Extract text → Chunk (800/150 overlap) →
-    Embed (OpenAI 1536-dim) → Store in Pinecone + MongoDB.
-    Query: Cache check → Query rewrite → Embed query → Vector search (top 20)
-    + Keyword search (top 5) → Rerank to top 5 → Build context → LLM generate
-    → Confidence score → Auto-escalate if < 0.6 → Return with sources.
+Q3: Explain the RAG pipeline.
+A:  Ingest: upload → store → extract → chunk → embed → Pinecone + MongoDB.
+    Query: rewrite → embed → hybrid search → rerank → LLM → confidence →
+    escalate if < 0.6 → return with sources.
 
-Q4: What is multi-tenancy and how did you implement it?
-A:  Multi-tenancy means one app serves many companies with isolated data.
-    We enforce isolation at 3 levels:
-    (1) JWT/header carries workspace_id, validated against workspace_members
-    (2) BaseRepository auto-filters all queries by workspace_id
-    (3) Pinecone uses separate namespace per workspace
+Q4: How is multi-tenancy implemented?
+A:  (1) JWT / X-Workspace-Id + membership check
+    (2) workspace_id on every mongoengine query
+    (3) Pinecone namespace per workspace
 
-Q5: What tech stack did you use and why?
-A:  FastAPI for async Python backend with auto-generated OpenAPI docs.
-    Next.js 15 for SSR/SSG React frontend with App Router.
-    MongoDB for flexible document schema (schemaless, good for SaaS).
-    Pinecone for managed vector search (no ops overhead).
-    Celery + Redis for async document processing.
-    TypeScript throughout frontend for type safety.
+Q5: Why Django REST Framework (not FastAPI)?
+A:  We migrated to DRF for a structured View/Serializer/Permission model,
+    mature Django ecosystem (CORS, Celery integration, admin), and team
+    familiarity — while keeping MongoDB via mongoengine and the same /api/v1
+    contract so the Next.js frontend did not need rewriting.
 
-Q6: How does authentication work?
-A:  JWT-based stateless auth. On login, server issues access token (30 min)
-    and refresh token (7 days). Frontend stores in localStorage. Axios
-    interceptor adds Bearer token to every request. On 401, automatically
-    calls /auth/refresh to get new tokens. Google OAuth via Authlib redirects
-    to Google, callback creates/finds user, redirects to frontend with tokens.
+Q6: Why mongoengine instead of Django ORM?
+A:  Core SaaS data is document-oriented (flexible fields for branding,
+    chatbot config, analytics metrics). mongoengine maps naturally to MongoDB.
+    Django ORM/SQLite is only used for admin and session tables.
 
-Q7: Explain the RBAC system.
-A:  4 roles: owner, admin, agent, viewer. 9 permissions mapped to roles
-    in ROLE_PERMISSIONS dict in models/enums.py. Endpoints use
-    require_permission(Permission.X) FastAPI dependency which checks
-    the user's role from workspace_members (not just JWT claim) and
-    raises 403 if permission missing.
+Q7: How does authentication work in this Django app?
+A:  Custom JWTAuthentication (not Django session auth for API). Tokens issued
+    with PyJWT; User documents live in MongoDB. On each request, Bearer token
+    is decoded, User loaded, membership checked via X-Workspace-Id.
 
-Q8: How does the chatbot widget work without authentication?
-A:  Widget calls public API endpoints (/public/chat/{chatbot_id}/message)
-    with no auth token. Security via: (1) rate limiting 30 req/min per IP,
-    (2) chatbot must be is_active=true, (3) chatbot_id is UUID (not guessable),
-    (4) customer_id generated client-side and stored in localStorage.
+Q8: How is RBAC enforced?
+A:  core/enums.ROLE_PERMISSIONS maps roles to permissions.
+    Views use HasWorkspacePermission("manage_knowledge") etc.
+    Membership role comes from WorkspaceMember, not only the JWT claim.
 
-Q9: What happens when the AI is not confident in its answer?
-A:  If confidence score < 0.6 (CONFIDENCE_THRESHOLD):
-    (1) Conversation status changes to "escalated"
-    (2) TicketService.auto_create_from_conversation() is called
-    (3) LLM generates ticket: title, summary, intent, priority, category
-    (4) Customer sees message that a human agent will help them
+Q9: What happens on low AI confidence?
+A:  Conversation → escalated; Ticket auto-created with AI summary/intent/
+    priority; customer is told a human will help.
 
-Q10: How are documents processed after upload?
-A:  Upload returns immediately with status "pending". Celery task
-     process_document runs in background: downloads from S3 → extracts text
-     (PDF/DOCX/HTML/TXT) → chunks with LangChain → embeds each chunk →
-     upserts to Pinecone → saves metadata to MongoDB → updates status to
-     "indexed" or "failed" with error message.
+Q10: How are documents processed?
+A:  Upload creates Document(pending). Celery process_document (or sync
+     fallback) extracts, chunks, embeds, upserts Pinecone, saves chunks,
+     sets status indexed/failed.
 
-Q11: What is hybrid search and why use it?
-A:  Hybrid search combines vector (semantic) search with keyword (BM25/regex)
-     search. Vector search finds conceptually similar content even with
-     different words. Keyword search finds exact term matches. Together
-     they improve recall — vector might miss exact product names, keyword
-     might miss paraphrased questions.
+Q11: What is hybrid search?
+A:  Vector similarity (meaning) + keyword match (exact terms) merged and
+     reranked for better recall.
 
-Q12: How did you structure the backend code?
-A:  Clean architecture with 4 layers:
-     Endpoints (thin HTTP handlers) → Services (business logic) →
-     Repositories (MongoDB access) → Schemas (Pydantic DTOs).
-     AI layer is separate (ai/ package). Cross-cutting concerns in
-     middleware/ and core/. Dependency injection via FastAPI Depends().
+Q12: How is the backend structured?
+A:  Django project (config/) + DRF app (api/) + shared core (AI/utils).
+     Views → serializers/permissions → mongoengine models / RAG services →
+     Celery tasks for heavy work.
 
-Q13: What design patterns did you use?
-A:  Repository Pattern (data access), Service Layer (business logic),
-     Dependency Injection (FastAPI Depends), Strategy Pattern (LLM/vector
-     fallbacks), Factory Pattern (get_service closures), Middleware Pipeline
-     (audit, CORS, rate limit), Async Task Queue (Celery).
+Q13: Design patterns?
+A:  DRF layered architecture, custom auth/permissions, ODM models,
+     strategy fallbacks for AI providers, Celery task queue, multi-tenant
+     request helpers.
 
-Q14: How does the website crawler work?
-A:  User submits URL → Celery job starts → WebsiteCrawler class uses
-     BeautifulSoup + httpx async client → crawls same-domain links up to
-     depth 2, max 50 pages → each page's text fed into KnowledgeService.ingest_text()
-     → same ingestion pipeline as manual uploads. Re-syncs daily via Celery Beat.
+Q14: How does the crawler work?
+A:  URL → WebsiteCrawler (httpx + BeautifulSoup) → ingest_text per page →
+     same knowledge pipeline; Beat re-syncs daily.
 
-Q15: What is confidence scoring?
-A:  Two signals: (1) average cosine similarity of retrieved chunks (retrieval
-     quality), (2) LLM self-assessment asking "rate your confidence 0-1".
-     Final score = max of both. Low confidence triggers escalation to prevent
-     the bot from giving wrong answers to customers.
+Q15: Frontend state management?
+A:  Zustand (auth), React Query (server data), Axios interceptors (JWT refresh).
 
-Q16: How is the frontend state managed?
-A:  Three layers: (1) Zustand for auth state (user, workspace, tokens) —
-     persisted to localStorage. (2) TanStack React Query for all API/server
-     state — handles caching, refetching, loading states. (3) Local component
-     state (useState) for form inputs and UI toggles.
+Q16: How would you scale?
+A:  Multiple Gunicorn/Django workers behind Nginx; MongoDB Atlas shard by
+     workspace_id; Pinecone serverless; more Celery workers; Redis Cluster;
+     S3 + CDN for widget.
 
-Q17: What are the subscription plans?
-A:  Free: 10 docs, 1K messages, 1 chatbot, 2 users
-     Starter ($29): 100 docs, 10K messages, 3 chatbots, 5 users
-     Professional ($99): 1000 docs, 100K messages, 10 chatbots, 20 users
-     Enterprise (custom): unlimited everything + SSO + dedicated support
-     (Stripe billing integration is stubbed — plans defined in BillingService)
+Q17: Limitations?
+A:  Stripe/voice/WhatsApp/Slack stubs; API-key auth not on all routes;
+     widget missing some UX features; WebSocket live chat partial.
 
-Q18: What is Celery and why did you use it?
-A:  Celery is a distributed task queue. Document ingestion can take 30+
-     seconds (extract, chunk, embed 100s of chunks). Without Celery, the
-     API would block until complete. With Celery, API returns immediately,
-     processing happens in background worker. Redis is the message broker.
-
-Q19: How would you scale this to thousands of companies?
-A:  (1) Horizontal scale: multiple FastAPI instances behind Nginx load balancer
-     (2) MongoDB Atlas with sharding by workspace_id
-     (3) Pinecone serverless handles vector scaling automatically
-     (4) Scale celery-worker replicas for ingestion throughput
-     (5) Redis Cluster for HA caching
-     (6) S3 for unlimited document storage
-     (7) CDN for widget.js delivery
-
-Q20: What are the limitations / what would you improve?
-A:  Honestly: Stripe billing not wired, voice/WhatsApp/Slack are stubs,
-     API key auth middleware not connected to routes, no CSRF protection,
-     widget missing file upload and dark mode, semantic search doesn't cover
-     conversations, notifications collection unused, no SSO, no document
-     versioning, no team collaboration on knowledge base approval workflow.
-
-Q21: What is Pinecone and why not use MongoDB for vectors?
-A:  Pinecone is a purpose-built vector database optimized for similarity
-     search in high-dimensional spaces (1536 dims). MongoDB has Atlas Vector
-     Search but Pinecone offers better performance at scale, namespace
-     isolation, metadata filtering, and managed infrastructure. We have
-     an in-memory fallback for development without Pinecone API key.
-
-Q22: Explain the chunking strategy.
-A:  We use LangChain RecursiveCharacterTextSplitter with chunk_size=800
-     characters and chunk_overlap=150. It tries to split on paragraph
-     boundaries first, then sentences, then words — preserving semantic
-     coherence. Overlap ensures context isn't lost at chunk boundaries.
-     800 chars ≈ 500-1000 tokens, within the recommended RAG range.
-
-Q23: What is the embeddable widget and how does it integrate?
-A:  A standalone JavaScript bundle built with Vite (IIFE format).
-     Customer adds one script tag to their website:
-     <script src="widget.js" data-chatbot-id="xxx"></script>
-     Widget creates a floating chat button, fetches chatbot config from
-     public API, manages conversation via localStorage, sends messages
-     to public chat endpoint, shows typing indicator and feedback buttons.
-
-Q24: How do you prevent AI hallucinations?
-A:  Multiple techniques:
-     (1) RAG — answer grounded in retrieved context only
-     (2) Prompt rules — "answer ONLY from context, say I don't know otherwise"
-     (3) Confidence scoring — low confidence triggers human escalation
-     (4) Source citations — customer can verify answer against sources
-     (5) Temperature 0.3 — lower temperature = more deterministic responses
-
-Q25: What monitoring is in place?
-A:  Prometheus scrapes /metrics endpoint from FastAPI (via prometheus-fastapi-
-     instrumentator). Grafana dashboards on port 3001. Audit logs in MongoDB
-     for all mutations. Health check endpoint at /health. Celery task retries
-     with logging on failure.
+Q18: FastAPI vs Django in this project?
+A:  FastAPI was the original async API. Migration to Django/DRF kept features
+     and URLs; AI layer was converted to sync for simpler DRF views; backup
+     remains in app_fastapi_backup for comparison in interviews.
 
 
 ================================================================================
@@ -1349,95 +799,104 @@ SECTION 19: KEY FILES TO KNOW FOR INTERVIEW
 ================================================================================
 
 BACKEND — MUST KNOW
-  app/main.py                         App entry, middleware, lifespan
-  app/core/deps.py                    Auth guards, tenant context, RBAC
-  app/core/security.py                JWT creation/validation, bcrypt
-  app/ai/rag_engine.py                Core RAG logic — most important AI file
-  app/services/chat_service.py        Chat flow + escalation trigger
-  app/services/knowledge_service.py   Document upload + ingestion trigger
-  app/services/auth_service.py        Signup/login/OAuth flows
-  app/repositories/base.py            Tenant-scoped CRUD pattern
-  app/models/enums.py                 All roles, permissions, statuses
-  app/workers/celery_app.py           Celery config + beat schedule
+  manage.py / config/settings.py      Django entry + settings
+  config/urls.py                      Root URL routing
+  api/apps.py                         MongoDB connect on startup
+  api/models.py                       All mongoengine documents
+  api/authentication.py               JWT + tenant helpers
+  api/permissions.py                  RBAC
+  api/views/auth.py                   Signup/login flows
+  api/views/chat.py                   Public chat + escalation
+  api/views/knowledge.py              Document upload
+  api/services/knowledge.py           Ingestion pipeline
+  core/ai/rag_engine.py               Core RAG logic
+  api/tasks.py                        Celery tasks
+  config/celery.py                    Beat schedule
 
 FRONTEND — MUST KNOW
-  src/lib/api.ts                      Axios client, token refresh interceptor
-  src/stores/auth-store.ts            Zustand auth state
-  src/app/dashboard/layout.tsx        Auth guard for protected routes
-  src/providers/app-providers.tsx     React Query + theme setup
-
-INFRASTRUCTURE
-  infrastructure/docker-compose.yml   All 9 services
-  infrastructure/nginx/nginx.conf     Routing rules
-  .github/workflows/ci.yml            CI pipeline
+  src/lib/api.ts                      Axios + refresh
+  src/stores/auth-store.ts            Zustand auth
+  src/app/dashboard/layout.tsx        Auth guard
 
 
 ================================================================================
 SECTION 20: GLOSSARY OF TERMS
 ================================================================================
 
-  RAG           Retrieval-Augmented Generation — retrieve docs then generate answer
+  RAG           Retrieval-Augmented Generation
   LLM           Large Language Model (GPT-4o, Claude)
-  Embedding     Numerical vector representation of text for similarity search
-  Vector DB     Database optimized for similarity search (Pinecone)
-  Chunk         Segment of a document stored and searched independently
-  Namespace     Isolated partition in Pinecone per tenant
-  JWT           JSON Web Token — stateless authentication token
+  Embedding     Vector representation of text
+  Vector DB     Similarity search DB (Pinecone)
+  Chunk         Segment of a document for retrieval
+  Namespace     Pinecone partition per tenant
+  JWT           JSON Web Token
   RBAC          Role-Based Access Control
-  SaaS          Software as a Service — cloud subscription software
-  Multi-tenant  One app instance serving multiple isolated customers
-  Celery        Python distributed task queue for background jobs
-  ASGI          Asynchronous Server Gateway Interface (Python async web standard)
-  DTO           Data Transfer Object — Pydantic schema for API input/output
-  IIFE          Immediately Invoked Function Expression (widget bundle format)
+  SaaS          Software as a Service
+  Multi-tenant  One app, many isolated customers
+  Celery        Distributed Python task queue
+  DRF           Django REST Framework
+  ODM           Object-Document Mapper (mongoengine)
+  ORM           Object-Relational Mapper (Django ORM — admin only here)
+  WSGI          Web Server Gateway Interface (Gunicorn)
+  Serializer    DRF class validating request/response data
+  Permission    DRF class controlling endpoint access
   CSAT          Customer Satisfaction Score
-  SSE           Server-Sent Events — one-way streaming from server to client
-  OAuth         Open standard for authorization (Google login)
-  bcrypt        Password hashing algorithm
-  CORS          Cross-Origin Resource Sharing — browser security for APIs
-  Pinecone      Managed vector database service
-  Motor         Async MongoDB driver for Python
-  FastAPI       Modern Python web framework with automatic OpenAPI docs
-  LangChain     Framework for building LLM applications
-  Hybrid Search Combination of vector + keyword search
-  Hallucination When AI generates false/confident-sounding incorrect information
+  Hallucination AI inventing false information
+  Hybrid Search Vector + keyword retrieval together
 
 
 ================================================================================
-SECTION 21: 30-SECOND / 2-MINUTE / 5-MINUTE ELEVATOR PITCHES
+SECTION 21: ELEVATOR PITCHES
 ================================================================================
 
 30 SECONDS
 ----------
-"I built SupportAI, a multi-tenant SaaS platform where companies upload their
-docs and get an AI support chatbot powered by RAG. It retrieves real company
-data before answering, auto-escalates to humans when unsure, and generates
-support tickets automatically. Stack: FastAPI, Next.js, MongoDB, Pinecone, Celery."
+"I built SupportAI, a multi-tenant SaaS where companies upload docs and get an
+AI support chatbot powered by RAG. Low-confidence answers auto-escalate to
+tickets. Stack: Django REST Framework, Next.js, MongoDB, Pinecone, Celery."
 
 2 MINUTES
 ---------
-"SupportAI solves repetitive customer support for B2B companies. The core
-is a RAG pipeline — when a customer asks a question, we embed it, search
-the company's knowledge base using hybrid vector + keyword search, rerank the
-top chunks, and inject them as context into GPT-4o. The answer includes
-source citations and a confidence score. Below 60% confidence, it auto-creates
-a support ticket and escalates to a human agent.
+"SupportAI solves repetitive B2B support with RAG. Questions are embedded,
+hybrid-searched against the company knowledge base, and answered by GPT-4o
+with citations and a confidence score. Below 60% confidence we create a ticket.
 
-Architecturally it's a monorepo: FastAPI backend with clean architecture
-(endpoints → services → repositories), Next.js 15 dashboard, and a Vite-built
-embeddable widget. Multi-tenancy is enforced at JWT, repository, and Pinecone
-namespace levels. Document ingestion runs asynchronously via Celery. I implemented
-21 modules including auth with RBAC, workspace management, knowledge base,
-chatbot builder, ticketing, analytics, and WebSocket live chat."
+The backend is Django + DRF with mongoengine for MongoDB documents, custom JWT
+auth for multi-tenant workspaces, and Celery for document ingestion. The
+frontend is Next.js. We migrated from FastAPI to DRF while keeping the same
+/api/v1 API so the UI didn't change. Features include knowledge base, crawler,
+chatbot builder, embeddable widget, tickets, and analytics."
 
 5 MINUTES
 ---------
-[Use Sections 1, 4, 7, 8, 9, and 18 Q1-Q5 combined for a full walkthrough]
+Walk through Sections 1, 4, 7, 8, 9 and Q5–Q12 from Section 18.
+
+
+================================================================================
+SECTION 22: FASTAPI → DJANGO MIGRATION CHEAT SHEET
+================================================================================
+
+FastAPI concept              Django / DRF equivalent
+---------------------------  ------------------------------------------
+FastAPI app + uvicorn        Django project + runserver / gunicorn
+APIRouter endpoints          api/views/*.py + api/urls.py
+Pydantic BaseModel           DRF Serializer
+Depends(get_current_user)    JWTAuthentication + permission_classes
+Motor async MongoDB          mongoengine Document models
+app/repositories/*.py        Queries on mongoengine models in views/services
+app/services/*.py            api/services/ + logic inside views
+app/ai (async)               core/ai (sync for DRF)
+Celery app.workers           celery -A config ; api/tasks.py
+lifespan connect Mongo       ApiConfig.ready() → mongoengine.connect()
+/docs Swagger auto           Use /api/v1/ root or add drf-spectacular later
+
+Interview tip: Be ready to explain WHY you migrated (structure, ecosystem)
+and WHAT you kept (MongoDB, RAG, Celery, API contract).
 
 
 ================================================================================
 END OF INTERVIEW PREPARATION GUIDE
 ================================================================================
-Generated for: AI Customer Support SaaS Platform (SupportAI)
+Updated for: Django 5.1 + Django REST Framework backend
 Last updated: 2026
 ================================================================================

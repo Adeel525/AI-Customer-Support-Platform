@@ -17,12 +17,17 @@ jobs:
       - name: Install dependencies
         working-directory: backend
         run: pip install -r requirements.txt
+      - name: Django check
+        working-directory: backend
+        run: python manage.py check
       - name: Lint
         working-directory: backend
-        run: ruff check app/ || true
+        run: ruff check api/ core/ config/ || true
       - name: Run tests
         working-directory: backend
         run: pytest tests/ -v
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
 
   frontend-build:
     runs-on: ubuntu-latest

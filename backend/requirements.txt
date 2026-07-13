@@ -1,35 +1,58 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-motor==3.6.0
-pydantic==2.10.4
-pydantic-settings==2.7.0
+# Django & REST
+Django==5.1.4
+djangorestframework==3.15.2
+djangorestframework-simplejwt==5.4.0
+django-cors-headers==4.6.0
+django-environ==0.11.2
+whitenoise==6.8.2
+gunicorn==23.0.0
+
+# Auth / JWT (custom JWT for mongoengine users)
+PyJWT==2.10.1
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.2.1
-python-multipart==0.0.20
-email-validator==2.2.0
+
+# MongoDB
+mongoengine==0.29.1
+pymongo==4.9.2
+
+# Async / HTTP
 httpx==0.28.1
-authlib==1.4.0
-itsdangerous==2.2.0
-slowapi==0.1.9
-prometheus-fastapi-instrumentator==7.0.0
+
+# Celery & Redis
 celery[redis]==5.4.0
 redis==5.2.1
-boto3==1.35.81
+
+# AI / RAG
 openai==1.58.1
 anthropic==0.42.0
 pinecone-client==5.0.1
 langchain==0.3.14
 langchain-text-splitters==0.3.4
 tiktoken==0.8.0
+
+# Document processing
+boto3==1.35.81
 pypdf==5.1.0
 pdfplumber==0.11.4
 python-docx==1.1.2
 beautifulsoup4==4.12.3
 lxml==5.3.0
-aiofiles==24.1.0
-websockets==14.1
+
+# Billing
 stripe==11.4.0
+
+# Optional WebSockets
+channels==4.2.0
+channels-redis==4.2.1
+
+# Testing
 pytest==8.3.4
+pytest-django==4.9.0
 pytest-asyncio==0.25.0
+
+# Dev / lint
 ruff==0.8.4
+email-validator==2.2.0
+python-multipart==0.0.20

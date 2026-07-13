@@ -34,16 +34,20 @@ Every data document includes `workspace_id`. Isolation enforced at:
 2. **Repository** — All queries filter by `workspace_id`
 3. **Pinecone** — Namespace per workspace (`workspace_{id}`)
 
-## Backend Layers
+## Backend Layers (Django REST Framework)
 
 | Layer | Responsibility |
 |-------|---------------|
-| Endpoints | HTTP routing, validation, auth guards |
-| Services | Business rules, orchestration |
-| Repositories | MongoDB data access |
-| Schemas | Pydantic request/response DTOs |
-| AI | LLM, embeddings, RAG pipeline |
-| Workers | Celery async tasks |
+| Views | HTTP routing, validation, auth guards (`api/views/`) |
+| Serializers | Request/response contracts (`api/serializers.py`) |
+| Models | MongoDB documents via mongoengine (`api/models.py`) |
+| Services | Business helpers (`api/services/`) |
+| Core AI | RAG, embeddings, LLM (`core/ai/`) |
+| Tasks | Celery async jobs (`api/tasks.py`) |
+
+**Request flow:** `DRF View` → `JWTAuthentication` / permissions → mongoengine models / `core.ai` → MongoDB / Pinecone / Redis
+
+> Migrated from FastAPI to Django REST Framework. API paths under `/api/v1/` remain compatible with the frontend.
 
 ## Key Services
 

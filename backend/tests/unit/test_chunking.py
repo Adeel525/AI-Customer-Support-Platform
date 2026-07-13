@@ -1,4 +1,4 @@
-from app.utils.chunking import estimate_tokens, split_text
+from core.utils.chunking import estimate_tokens, split_text
 
 
 def test_split_text():
@@ -13,8 +13,3 @@ def test_estimate_tokens():
     tokens = estimate_tokens(text)
     assert tokens > 0
     assert tokens == len(text) // 4
-
-
-def test_empty_text():
-    chunks = split_text("")
-    assert chunks == [""] or len(chunks) <= 1

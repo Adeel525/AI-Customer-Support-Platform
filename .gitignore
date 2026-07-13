@@ -47,3 +47,5 @@ backend_data/
 
 # Docker volumes
 mongodb_data/
+
+*.sqlite3
